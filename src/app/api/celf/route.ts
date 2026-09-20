@@ -7,23 +7,28 @@ export async function POST(request: Request) {
     const CELF_API_URL = process.env.CELF_API_URL || '';
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
 
-    const payload = {
+    // CELFのテーブルに送信する1件分のレコードデータ
+    const record = {
       application_number: body.applicationNumber,
       customer_name: body.customerName,
       total_amount: body.totalAmount,
       staff_name: body.staffName,
       issue_date: body.issueDate,
-      items: body.items,
       signature_data: body.signatureData,
     };
 
-    // URLが設定されていない場合はモック成功処理
+    // 一括登録(bulkinsert)の仕様に合わせて配列形式にラップ
+    const payload = {
+      data: [record]
+    };
+
+    // URLが未設定の場合のダミー処理
     if (!CELF_API_URL) {
       console.log('CELF_API_URL未設定のためモック処理実行:', payload);
       return NextResponse.json({ success: true, message: 'Mock sent successfully (CELF_API_URL not set)' });
     }
 
-    // CELFへのAPIリクエスト
+    // CELFへのAPIリクエスト送信
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
       headers: {
@@ -42,7 +47,7 @@ export async function POST(request: Request) {
     }
 
     if (!response.ok) {
-      console.error('CELF API Error Details:', resData);
+      console.error('CELF API エラー詳細:', resData);
       return NextResponse.json(
         {
           success: false,
@@ -55,7 +60,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: resData });
 
   } catch (error: any) {
-    console.error('CELF API Server Error:', error);
+    console.error('CELF API サーバーエラー:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to send data to CELF' },
       { status: 500 }
