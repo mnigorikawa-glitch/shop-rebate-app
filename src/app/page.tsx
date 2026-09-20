@@ -1,84 +1,91 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
-interface RebateItem {
-  id: string;
-  type: string;
-  amount: string;
-}
+// よく使われる還元内容の選択肢リスト
+const REDUCTION_TYPES = [
+  'auUQ_SIM単体MNP',
+  '自宅セット割(ネットコース)',
+  '自宅セット割(でんき)',
+  'auPAYゴールドカード',
+  '当日特典キャッシュバック',
+  'その他（手入力）',
+];
 
 export default function Home() {
-  const [customerName, setCustomerName] = useState('');
-  const [applicationNumber, setApplicationNumber] = useState('');
-  const [staffName, setStaffName] = useState('');
-  const [agreed, setAgreed] = useState(false);
-  const [issueDate] = useState(() => new Date().toLocaleDateString('ja-JP'));
+  // モード選択 ('即時' | '後日')
+  const [mode, setMode] = useState<'即時' | '後日'>('即時');
 
-  const [items, setItems] = useState<RebateItem[]>([
-    { id: '1', type: '独自特典キャッシュバック', amount: '5000' },
+  // 基本情報
+  const [storeName, setStoreName] = useState('au Style イオンモールつくば');
+  const [staffName, setStaffName] = useState('');
+  const [checkerName, setCheckerName] = useState('');
+  const [counterNo, setCounterNo] = useState('1');
+  const [posBillNo, setPosBillNo] = useState('');
+  const [applicationNumber, setApplicationNumber] = useState('');
+
+  // 還元内訳（複数追加対応）
+  const [items, setItems] = useState<Array<{ type: string; customType: string; subAppNo: string; amount: string }>>([
+    { type: 'auUQ_SIM単体MNP', customType: '', subAppNo: '', amount: '' },
   ]);
 
+  // 免責チェック & サイン
+  const [agreed, setAgreed] = useState(false);
+  const [signatureData, setSignatureData] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+
+  // Canvas関連
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const isDrawingRef = useRef(false);
+  const isDrawing = useRef(false);
 
-  const addItem = () => {
-    setItems((prev) => [
-      ...prev,
-      { id: Date.now().toString(), type: '独自特典キャッシュバック', amount: '' },
-    ]);
-  };
-
-  const removeItem = (id: string) => {
-    if (items.length > 1) {
-      setItems((prev) => prev.filter((item) => item.id !== id));
-    }
-  };
-
-  const updateItem = (id: string, field: keyof RebateItem, value: string) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
-    );
-  };
-
+  // 金額合計
   const totalAmount = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
-  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  // --- Canvas制御 (手書きサイン) ---
+  useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    return {
-      x: clientX - rect.left,
-      y: clientY - rect.top,
-    };
-  };
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#000';
+  }, [mode]);
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    isDrawingRef.current = true;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const { x, y } = getCoordinates(e);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawingRef.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const { x, y } = getCoordinates(e);
-    ctx.lineTo(x, y);
-    ctx.stroke();
+    isDrawing.current = true;
+    draw(e);
   };
 
   const stopDrawing = () => {
-    isDrawingRef.current = false;
+    if (isDrawing.current) {
+      isDrawing.current = false;
+      const canvas = canvasRef.current;
+      if (canvas) {
+        setSignatureData(canvas.toDataURL());
+      }
+    }
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
   };
 
   const clearCanvas = () => {
@@ -87,214 +94,354 @@ export default function Home() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.beginPath();
+    setSignatureData(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!agreed) {
-      alert('注意事項への同意（チェック）が必要です。');
+  // --- 還元内訳の追加 / 削除 / 変更 ---
+  const addItem = () => {
+    setItems([...items, { type: 'auUQ_SIM単体MNP', customType: '', subAppNo: '', amount: '' }]);
+  };
+
+  const removeItem = (index: number) => {
+    if (items.length === 1) return;
+    setItems(items.filter((_, i) => i !== index));
+  };
+
+  const updateItem = (index: number, field: string, value: string) => {
+    const newItems = [...items];
+    newItems[index] = { ...newItems[index], [field]: value };
+    setItems(newItems);
+  };
+
+  // 既存回線用入力補完
+  const appendExistingPrefix = (index: number, prefix: string) => {
+    const currentVal = items[index].subAppNo;
+    if (!currentVal.startsWith('既存')) {
+      updateItem(index, 'subAppNo', `既存${prefix}${currentVal}`);
+    }
+  };
+
+  // --- 送信 & 印刷処理 ---
+  const handleSubmit = async () => {
+    if (!staffName) {
+      alert('担当スタッフ名を入力してください。');
+      return;
+    }
+    if (!applicationNumber) {
+      alert('申込書番号を入力してください。');
+      return;
+    }
+    if (!signatureData) {
+      alert('お客様署名（サイン）をお願いいたします。');
       return;
     }
 
-    const canvas = canvasRef.current;
-    const signatureData = canvas ? canvas.toDataURL('image/png') : '';
-
-    const formData = {
-      applicationNumber,
-      customerName,
-      staffName,
-      issueDate,
-      totalAmount,
-      items,
-      signatureData,
-    };
+    setIsSending(true);
 
     try {
+      const payload = {
+        mode,
+        storeName,
+        staffName,
+        checkerName,
+        counterNo: mode === '即時' ? counterNo : '',
+        posBillNo: mode === '即時' ? posBillNo : '',
+        applicationNumber,
+        totalAmount,
+        items: items.map(item => ({
+          type: item.type === 'その他（手入力）' ? item.customType : item.type,
+          subAppNo: item.subAppNo,
+          amount: Number(item.amount) || 0,
+        })),
+      };
+
       const res = await fetch('/api/celf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
-      const result = await res.json();
+      const data = await res.json();
 
-      if (result.success) {
-        setTimeout(() => {
-          window.print();
-        }, 100);
-      } else {
-        alert('CELFへの送信に失敗しました: ' + result.error);
+      if (!data.success) {
+        throw new Error(data.error || 'CELFへのデータ送信に失敗しました。');
       }
-    } catch (err) {
-      console.error(err);
-      alert('通信エラーが発生しました。');
+
+      // 送信成功後に印刷ダイアログを起動
+      window.print();
+    } catch (err: any) {
+      alert(`エラー: ${err.message}`);
+    } finally {
+      setIsSending(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-slate-100 p-4 md:p-8 font-sans text-slate-800">
-      <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-lg p-6 md:p-8 space-y-6 print:shadow-none print:p-0 print:max-w-full">
-        <header className="border-b pb-4 flex justify-between items-end">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">特典還元 兼 キャッシュバック受領書</h1>
-            <p className="text-sm text-slate-500 mt-1">au Style イオンモールつくば</p>
+    <div className="min-h-screen bg-slate-100 p-4 md:p-8 font-sans">
+      <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-md p-6 print:shadow-none print:p-0">
+        
+        {/* ヘッダー & モード切り替え */}
+        <div className="border-b pb-4 mb-6 print:hidden">
+          <h1 className="text-xl font-bold text-slate-800 text-center mb-4">キャッシュバック受領書 作成</h1>
+          <div className="grid grid-cols-2 gap-2 bg-slate-200 p-1 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setMode('即時')}
+              className={`py-2 text-sm font-bold rounded-md transition-all ${
+                mode === '即時' ? 'bg-orange-500 text-white shadow' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              ⚡ 即時キャッシュバック (店頭現金)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('後日')}
+              className={`py-2 text-sm font-bold rounded-md transition-all ${
+                mode === '後日' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              📅 後日キャッシュバック (口座振込)
+            </button>
           </div>
-          <div className="text-right text-sm text-slate-600">
-            <p>発行日: {issueDate}</p>
-          </div>
-        </header>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <section className="bg-slate-50 p-4 rounded-xl space-y-4 print:bg-transparent print:p-0 print:border-b print:pb-4">
-            <h2 className="font-bold text-slate-700 print:text-base">1. 基本情報</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">申込書番号 *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="例: A12345678"
-                  value={applicationNumber}
-                  onChange={(e) => setApplicationNumber(e.target.value)}
-                  className="w-full p-3 border border-slate-300 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white print:border-none print:p-0 print:text-base"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">お客様氏名 *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="例: 田中 太郎 様"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full p-3 border border-slate-300 rounded-lg text-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white print:border-none print:p-0 print:text-base"
-                />
-              </div>
+        {/* 印刷用タイトル */}
+        <div className="hidden print:block text-center mb-6">
+          <h1 className="text-2xl font-bold border-b-2 border-black pb-2">
+            キャッシュバック受領書 ({mode})
+          </h1>
+        </div>
+
+        {/* 1. 基本情報 */}
+        <div className="space-y-4 mb-6">
+          <h2 className="text-md font-bold text-slate-700 border-l-4 border-slate-700 pl-2 print:hidden">1. 基本情報</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">店舗名</label>
+              <input
+                type="text"
+                value={storeName}
+                onChange={(e) => setStoreName(e.target.value)}
+                className="w-full border border-slate-300 rounded p-2 text-sm"
+              />
             </div>
-          </section>
-
-          <section className="space-y-3">
-            <div className="flex justify-between items-center print:hidden">
-              <h2 className="font-bold text-slate-700">2. 還元内容内訳</h2>
-              <button
-                type="button"
-                onClick={addItem}
-                className="px-3 py-1.5 bg-blue-50 text-blue-600 font-semibold rounded-lg hover:bg-blue-100 text-sm"
-              >
-                ＋ 特典項目を追加
-              </button>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">申込書番号 *</label>
+              <input
+                type="text"
+                placeholder="例: EAD123456"
+                value={applicationNumber}
+                onChange={(e) => setApplicationNumber(e.target.value)}
+                className="w-full border border-slate-300 rounded p-2 text-sm font-mono"
+              />
             </div>
 
-            <h2 className="font-bold text-slate-700 hidden print:block">2. 還元内容内訳</h2>
-
-            {items.map((item, index) => (
-              <div key={item.id} className="p-4 border border-slate-200 rounded-xl space-y-3 bg-white shadow-sm print:shadow-none print:border-b print:rounded-none">
-                <div className="flex justify-between items-center border-b pb-2 print:hidden">
-                  <span className="text-xs font-bold text-slate-400">項目 {index + 1}</span>
-                  {items.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeItem(item.id)}
-                      className="text-xs text-red-500 hover:underline"
-                    >
-                      削除
-                    </button>
-                  )}
+            {mode === '即時' && (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">POS業務伝票番号</label>
+                  <input
+                    type="text"
+                    placeholder="例: A01234567"
+                    value={posBillNo}
+                    onChange={(e) => setPosBillNo(e.target.value)}
+                    className="w-full border border-slate-300 rounded p-2 text-sm font-mono"
+                  />
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">お渡しカウンター</label>
+                  <select
+                    value={counterNo}
+                    onChange={(e) => setCounterNo(e.target.value)}
+                    className="w-full border border-slate-300 rounded p-2 text-sm bg-white"
+                  >
+                    <option value="1">1番カウンター</option>
+                    <option value="2">2番カウンター</option>
+                    <option value="3">3番カウンター</option>
+                    <option value="イベント特設">イベント特設</option>
+                  </select>
+                </div>
+              </>
+            )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">還元内容</label>
-                    <input
-                      type="text"
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">担当者（出金/入力者） *</label>
+              <input
+                type="text"
+                value={staffName}
+                onChange={(e) => setStaffName(e.target.value)}
+                className="w-full border border-slate-300 rounded p-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1">Wチェック者</label>
+              <input
+                type="text"
+                value={checkerName}
+                onChange={(e) => setCheckerName(e.target.value)}
+                className="w-full border border-slate-300 rounded p-2 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 2. 還元内容内訳 */}
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-2 print:hidden">
+            <h2 className="text-md font-bold text-slate-700 border-l-4 border-slate-700 pl-2">2. 還元内容内訳</h2>
+            <button
+              type="button"
+              onClick={addItem}
+              className="text-xs bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700"
+            >
+              + 内訳を追加
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {items.map((item, index) => (
+              <div key={index} className="p-3 bg-slate-50 border rounded-lg space-y-2 print:bg-white print:border-b print:p-1">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                  <div className="md:col-span-5">
+                    <label className="block text-xs text-slate-500 print:hidden">還元内容</label>
+                    <select
                       value={item.type}
-                      onChange={(e) => updateItem(item.id, 'type', e.target.value)}
-                      className="w-full p-2 border rounded-lg bg-slate-50 text-sm print:bg-transparent print:border-none print:p-0"
-                    />
+                      onChange={(e) => updateItem(index, 'type', e.target.value)}
+                      className="w-full border border-slate-300 rounded p-1.5 text-sm bg-white"
+                    >
+                      {REDUCTION_TYPES.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                    {item.type === 'その他（手入力）' && (
+                      <input
+                        type="text"
+                        placeholder="還元内容を入力"
+                        value={item.customType}
+                        onChange={(e) => updateItem(index, 'customType', e.target.value)}
+                        className="w-full border border-slate-300 rounded p-1.5 text-sm mt-1"
+                      />
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">還元額 (円) *</label>
+
+                  <div className="md:col-span-4">
+                    <label className="block text-xs text-slate-500 print:hidden">セット割申番 (グループ登録)</label>
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        placeholder="例: EQ123456"
+                        value={item.subAppNo}
+                        onChange={(e) => updateItem(index, 'subAppNo', e.target.value)}
+                        className="w-full border border-slate-300 rounded p-1.5 text-sm font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => appendExistingPrefix(index, 'au')}
+                        className="text-[10px] bg-slate-200 px-1.5 rounded whitespace-nowrap hover:bg-slate-300 print:hidden"
+                      >
+                        既存au
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs text-slate-500 print:hidden">金額 (円)</label>
                     <input
                       type="number"
-                      required
                       placeholder="5000"
                       value={item.amount}
-                      onChange={(e) => updateItem(item.id, 'amount', e.target.value)}
-                      className="w-full p-2 border rounded-lg text-lg font-semibold text-blue-600 print:text-black print:border-none print:p-0"
+                      onChange={(e) => updateItem(index, 'amount', e.target.value)}
+                      className="w-full border border-slate-300 rounded p-1.5 text-sm text-right font-mono"
                     />
                   </div>
+
+                  {items.length > 1 && (
+                    <div className="md:col-span-1 text-right print:hidden">
+                      <button
+                        type="button"
+                        onClick={() => removeItem(index)}
+                        className="text-red-500 text-xs font-bold p-1 hover:bg-red-50 rounded"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
+          </div>
 
-            <div className="p-4 bg-blue-50 rounded-xl flex justify-between items-center print:bg-transparent print:border-t-2 print:border-black">
-              <span className="font-bold text-slate-700">受領金額 合計</span>
-              <span className="text-2xl font-black text-blue-600 print:text-black">¥ {totalAmount.toLocaleString()}</span>
-            </div>
-          </section>
+          <div className="flex justify-between items-center bg-slate-100 p-3 rounded-lg mt-3 print:bg-white print:border-t">
+            <span className="font-bold text-slate-700">合計金額</span>
+            <span className="text-xl font-bold text-blue-700 font-mono">
+              ¥ {totalAmount.toLocaleString()}
+            </span>
+          </div>
+        </div>
 
-          <section className="p-4 border border-amber-200 bg-amber-50 rounded-xl space-y-2 print:border-none print:bg-transparent print:p-0">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={agreed}
-                onChange={(e) => setAgreed(e.target.checked)}
-                className="mt-1 w-5 h-5 text-blue-600 rounded focus:ring-blue-500 print:hidden"
-              />
-              <span className="text-sm text-amber-900 print:text-xs print:text-slate-600">
-                上記の内容（還元金額・お渡し/振込方法）に誤りがないことを確認し、受領にあたっての注意事項に同意します。
-              </span>
-            </label>
-          </section>
+        {/* 3. 同意事項 & 電子サイン */}
+        <div className="mb-6">
+          <label className="flex items-start gap-2 mb-3 cursor-pointer print:hidden">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-1 h-4 w-4"
+            />
+            <span className="text-xs text-slate-600">
+              {mode === '即時'
+                ? '上記内容（受領金額・お渡し方法）に誤りがないことを確認し、現金を受領いたしました。'
+                : '上記内容にて後日口座振込による還元手続きを申請・同意いたします。'}
+            </span>
+          </label>
 
-          <section className="space-y-2">
-            <div className="flex justify-between items-center">
-              <h2 className="font-bold text-slate-700">3. お客様ご署名</h2>
-              <button
-                type="button"
-                onClick={clearCanvas}
-                className="text-xs text-slate-500 underline hover:text-slate-700 print:hidden"
-              >
-                書き直す
+          <div className="print:block text-xs text-slate-600 mb-2 hidden">
+            【受領確認】{mode === '即時' ? '上記金額を本日現金にて確かに受領いたしました。' : '上記内容にて後日口座振込による還元手続きを承りました。'}
+          </div>
+
+          <div className="border border-slate-300 rounded-lg p-2 bg-slate-50 relative print:bg-white">
+            <div className="flex justify-between text-xs text-slate-500 mb-1 print:hidden">
+              <span>お客様署名欄 (枠内に手書き)</span>
+              <button type="button" onClick={clearCanvas} className="text-slate-500 underline">
+                クリア
               </button>
             </div>
-            <div className="border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 overflow-hidden print:border-solid print:border-slate-400">
-              <canvas
-                ref={canvasRef}
-                width={600}
-                height={160}
-                onMouseDown={startDrawing}
-                onMouseMove={draw}
-                onMouseUp={stopDrawing}
-                onMouseLeave={stopDrawing}
-                onTouchStart={startDrawing}
-                onTouchMove={draw}
-                onTouchEnd={stopDrawing}
-                className="w-full h-40 touch-none cursor-crosshair bg-white"
-              />
-            </div>
-          </section>
-
-          <section>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">担当スタッフ名 *</label>
-            <input
-              type="text"
-              required
-              placeholder="例: 佐藤"
-              value={staffName}
-              onChange={(e) => setStaffName(e.target.value)}
-              className="w-full p-3 border border-slate-300 rounded-lg text-sm bg-white print:border-none print:p-0"
+            <canvas
+              ref={canvasRef}
+              width={500}
+              height={120}
+              className="w-full bg-white border border-dashed border-slate-300 rounded touch-none cursor-crosshair"
+              onMouseDown={startDrawing}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onMouseMove={draw}
+              onTouchStart={startDrawing}
+              onTouchEnd={stopDrawing}
+              onTouchMove={draw}
             />
-          </section>
+          </div>
+        </div>
 
+        {/* 4. アクションボタン */}
+        <div className="print:hidden">
           <button
-            type="submit"
-            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg rounded-xl shadow-md transition-all active:scale-[0.99] print:hidden"
+            type="button"
+            disabled={!agreed || isSending}
+            onClick={handleSubmit}
+            className={`w-full py-3.5 rounded-lg text-white font-bold transition-all shadow-md ${
+              agreed && !isSending
+                ? mode === '即時'
+                  ? 'bg-orange-500 hover:bg-orange-600'
+                  : 'bg-blue-600 hover:bg-blue-700'
+                : 'bg-slate-300 cursor-not-allowed'
+            }`}
           >
-            受領書を発行・印刷する
+            {isSending ? 'CELF連携中...' : '受領書を発行・印刷する'}
           </button>
-        </form>
+        </div>
+
       </div>
-    </main>
+    </div>
   );
 }
