@@ -4,18 +4,19 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const CELF_API_URL = process.env.CELF_API_URL || '';
+    const rawUrl = process.env.CELF_API_URL || 'https://api.cloud.celf.jp/v1/tables/即時cbデータtest/bulkinsert?company=340076c518';
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
 
-    // 今日の日付 (YYYY-MM-DD)
+    // URLに含まれる日本語テーブル名を自動エンコード
+    const CELF_API_URL = encodeURI(rawUrl);
+
     const today = new Date().toISOString().split('T')[0];
 
-    // 還元内容の項目テキストを連結（例: "当日特典キャッシュバック / 独自特典"）
     const itemTypes = Array.isArray(body.items) 
       ? body.items.map((i: any) => i.type).join(' / ') 
       : '';
 
-    // CELFテーブル「即時cbデータtest」のカラム名に厳密に合わせたオブジェクト
+    // CELFテーブルの各カラム
     const record: Record<string, any> = {
       "店舗名": "au Style イオンモールつくば",
       "POS登録日": today,
@@ -27,15 +28,10 @@ export async function POST(request: Request) {
       "リスト入力者": body.staffName || '',
     };
 
-    // 一括登録(bulkinsert)用データ構造
+    // CELF一括登録仕様: { "テーブル名": [ レコード配列 ] }
     const payload = {
-      data: [record]
+      "即時cbデータtest": [record]
     };
-
-    if (!CELF_API_URL) {
-      console.log('CELF_API_URL未設定のためモック処理実行:', payload);
-      return NextResponse.json({ success: true, message: 'Mock sent successfully' });
-    }
 
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
