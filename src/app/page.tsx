@@ -6,7 +6,6 @@ interface RebateItem {
   id: string;
   type: string;
   amount: string;
-  slipNumber: string;
 }
 
 export default function Home() {
@@ -17,60 +16,69 @@ export default function Home() {
   const [issueDate] = useState(() => new Date().toLocaleDateString('ja-JP'));
 
   const [items, setItems] = useState<RebateItem[]>([
-    { id: '1', type: '独自特典キャッシュバック', amount: '5000', slipNumber: '' },
+    { id: '1', type: '独自特典キャッシュバック', amount: '5000' },
   ]);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
+  const isDrawingRef = useRef(false);
 
   const addItem = () => {
-    setItems([
-      ...items,
-      { id: Date.now().toString(), type: '独自特典キャッシュバック', amount: '', slipNumber: '' },
+    setItems((prev) => [
+      ...prev,
+      { id: Date.now().toString(), type: '独自特典キャッシュバック', amount: '' },
     ]);
   };
 
   const removeItem = (id: string) => {
     if (items.length > 1) {
-      setItems(items.filter((item) => item.id !== id));
+      setItems((prev) => prev.filter((item) => item.id !== id));
     }
   };
 
   const updateItem = (id: string, field: keyof RebateItem, value: string) => {
-    setItems(items.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+    setItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    );
   };
 
   const totalAmount = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
-  // サイン描画機能
+  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
+  };
+
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    setIsDrawing(true);
+    isDrawingRef.current = true;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const { x, y } = getCoordinates(e);
     ctx.beginPath();
-    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+    ctx.moveTo(x, y);
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
+    if (!isDrawingRef.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+    const { x, y } = getCoordinates(e);
+    ctx.lineTo(x, y);
     ctx.stroke();
   };
 
   const stopDrawing = () => {
-    setIsDrawing(false);
+    isDrawingRef.current = false;
   };
 
   const clearCanvas = () => {
@@ -88,14 +96,14 @@ export default function Home() {
       return;
     }
 
-    // 画面の印刷機能を呼び出し（紙の受領書印刷 / PDF出力）
-    window.print();
+    setTimeout(() => {
+      window.print();
+    }, 100);
   };
 
   return (
     <main className="min-h-screen bg-slate-100 p-4 md:p-8 font-sans text-slate-800">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-lg p-6 md:p-8 space-y-6 print:shadow-none print:p-0 print:max-w-full">
-        {/* ヘッダー */}
         <header className="border-b pb-4 flex justify-between items-end">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">特典還元 兼 キャッシュバック受領書</h1>
@@ -107,7 +115,6 @@ export default function Home() {
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* 基本情報入力 */}
           <section className="bg-slate-50 p-4 rounded-xl space-y-4 print:bg-transparent print:p-0 print:border-b print:pb-4">
             <h2 className="font-bold text-slate-700 print:text-base">1. 基本情報</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -136,7 +143,6 @@ export default function Home() {
             </div>
           </section>
 
-          {/* 還元内訳 */}
           <section className="space-y-3">
             <div className="flex justify-between items-center print:hidden">
               <h2 className="font-bold text-slate-700">2. 還元内容内訳</h2>
@@ -197,7 +203,6 @@ export default function Home() {
             </div>
           </section>
 
-          {/* 免責確認 */}
           <section className="p-4 border border-amber-200 bg-amber-50 rounded-xl space-y-2 print:border-none print:bg-transparent print:p-0">
             <label className="flex items-start gap-3 cursor-pointer">
               <input
@@ -212,7 +217,6 @@ export default function Home() {
             </label>
           </section>
 
-          {/* 手書きサイン */}
           <section className="space-y-2">
             <div className="flex justify-between items-center">
               <h2 className="font-bold text-slate-700">3. お客様ご署名</h2>
@@ -241,7 +245,6 @@ export default function Home() {
             </div>
           </section>
 
-          {/* 担当者名 */}
           <section>
             <label className="block text-xs font-semibold text-slate-600 mb-1">担当スタッフ名 *</label>
             <input
@@ -254,7 +257,6 @@ export default function Home() {
             />
           </section>
 
-          {/* 印刷・送信ボタン（印刷時には非表示） */}
           <button
             type="submit"
             className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg rounded-xl shadow-md transition-all active:scale-[0.99] print:hidden"
