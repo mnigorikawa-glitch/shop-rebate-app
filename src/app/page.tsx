@@ -89,16 +89,46 @@ export default function Home() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!agreed) {
       alert('注意事項への同意（チェック）が必要です。');
       return;
     }
 
-    setTimeout(() => {
-      window.print();
-    }, 100);
+    const canvas = canvasRef.current;
+    const signatureData = canvas ? canvas.toDataURL('image/png') : '';
+
+    const formData = {
+      applicationNumber,
+      customerName,
+      staffName,
+      issueDate,
+      totalAmount,
+      items,
+      signatureData,
+    };
+
+    try {
+      const res = await fetch('/api/celf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        setTimeout(() => {
+          window.print();
+        }, 100);
+      } else {
+        alert('CELFへの送信に失敗しました: ' + result.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('通信エラーが発生しました。');
+    }
   };
 
   return (
