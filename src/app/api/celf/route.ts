@@ -7,28 +7,36 @@ export async function POST(request: Request) {
     const CELF_API_URL = process.env.CELF_API_URL || '';
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
 
-    // CELFのテーブルに送信する1件分のレコードデータ
-    const record = {
-      application_number: body.applicationNumber,
-      customer_name: body.customerName,
-      total_amount: body.totalAmount,
-      staff_name: body.staffName,
-      issue_date: body.issueDate,
-      signature_data: body.signatureData,
+    // 今日の日付 (YYYY-MM-DD)
+    const today = new Date().toISOString().split('T')[0];
+
+    // 還元内容の項目テキストを連結（例: "当日特典キャッシュバック / 独自特典"）
+    const itemTypes = Array.isArray(body.items) 
+      ? body.items.map((i: any) => i.type).join(' / ') 
+      : '';
+
+    // CELFテーブル「即時cbデータtest」のカラム名に厳密に合わせたオブジェクト
+    const record: Record<string, any> = {
+      "店舗名": "au Style イオンモールつくば",
+      "POS登録日": today,
+      "申込書番号": body.applicationNumber || '',
+      "還元内容": itemTypes,
+      "件数": 1,
+      "還元金額": Number(body.totalAmount) || 0,
+      "出金者": body.staffName || '',
+      "リスト入力者": body.staffName || '',
     };
 
-    // 一括登録(bulkinsert)の仕様に合わせて配列形式にラップ
+    // 一括登録(bulkinsert)用データ構造
     const payload = {
       data: [record]
     };
 
-    // URLが未設定の場合のダミー処理
     if (!CELF_API_URL) {
       console.log('CELF_API_URL未設定のためモック処理実行:', payload);
-      return NextResponse.json({ success: true, message: 'Mock sent successfully (CELF_API_URL not set)' });
+      return NextResponse.json({ success: true, message: 'Mock sent successfully' });
     }
 
-    // CELFへのAPIリクエスト送信
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
       headers: {
