@@ -25,9 +25,9 @@ export async function POST(request: Request) {
     // 対象テーブル名
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
-    // CELFの正式なデータ登録・更新用エンドポイント (POST対応)
+    // CELF一括登録用エンドポイント（/bulkinsert）
     const CELF_API_URL = encodeURI(
-      `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`
+      `https://api.cloud.celf.jp/v1/tables/${tableName}/bulkinsert?company=${companyId}`
     );
 
     // 受付月（当月1日 yyyy-MM-dd 形式）
