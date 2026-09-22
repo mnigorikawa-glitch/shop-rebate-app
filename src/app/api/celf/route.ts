@@ -25,18 +25,19 @@ export async function POST(request: Request) {
     // 対象テーブル名
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
+    // CELFのデータ追加登録用エンドポイント (/record)
     const CELF_API_URL = encodeURI(
-      `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`
+      `https://api.cloud.celf.jp/v1/tables/${tableName}/record?company=${companyId}`
     );
 
-    // 受付月（当月1日 yyyy/MM/dd 形式）
+    // 受付月（当月1日 yyyy-MM-dd 形式）
     const today = new Date();
-    const receptionMonth = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/01`;
+    const receptionMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
 
-    // POS登録日のフォーマット
+    // POS登録日のフォーマット（yyyy-MM-dd ハイフン区切りに厳密変換）
     let formattedPosDate = receptionMonth;
     if (posDate) {
-      formattedPosDate = String(posDate).replace(/-/g, '/');
+      formattedPosDate = String(posDate).replace(/\//g, '-');
     }
 
     // CELFテーブル構造（即時 / 後日）に完全一致させたレコード配列生成
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
       body: JSON.stringify(payload),
@@ -109,7 +110,6 @@ export async function POST(request: Request) {
     }
 
     if (!response.ok) {
-      // エラー時に実際に送信した payload 文字列を画面ダイアログにそのまま表示させる
       return NextResponse.json({
         success: false,
         httpStatus: response.status,
