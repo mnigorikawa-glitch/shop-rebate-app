@@ -6,7 +6,6 @@ export async function GET() {
     const companyId = '340076c518';
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
 
-    // URLの構築
     const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}/get?company=${companyId}`;
     const CELF_API_URL = encodeURI(rawUrl);
 
@@ -18,7 +17,6 @@ export async function GET() {
       cache: 'no-store',
     });
 
-    // CELFからの生レスポンスを取得
     const responseText = await response.text();
     let data: any = {};
     try {
@@ -28,7 +26,6 @@ export async function GET() {
     }
 
     if (!response.ok) {
-      console.warn('CELF店舗マスタ取得失敗:', response.status, data);
       return NextResponse.json({
         success: false,
         stores: [],
@@ -38,7 +35,6 @@ export async function GET() {
       });
     }
 
-    // レコード抽出
     const storeRecords = data[tableName] || data.data || (Array.isArray(data) ? data : []);
     const stores = storeRecords
       .map((row: any) => row.店舗名 || row.store_name)
@@ -50,7 +46,6 @@ export async function GET() {
       rawCount: storeRecords.length,
     });
   } catch (error: any) {
-    console.error('店舗マスタAPIエラー:', error);
     return NextResponse.json({
       success: false,
       stores: [],
