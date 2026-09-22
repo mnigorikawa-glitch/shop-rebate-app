@@ -1,72 +1,64 @@
 import { NextResponse } from 'next/server';
 
-// 当月の年月コード (例: 2026年9月 -> "2609")
-function getYearMonthCode(): string {
-  const now = new Date();
-  const yy = String(now.getFullYear()).slice(-2);
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  return `${yy}${mm}`;
-}
-
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const mode = body.mode || '即時';
-
-    const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
-    const companyId = '340076c518';
-    
-    const rawUrl = process.env.CELF_API_URL 
-      ? process.env.CELF_API_URL.replace(/即時cbデータtest|後日cbデータtest/, tableName)
-      : `https://api.cloud.celf.jp/v1/tables/${tableName}/bulkinsert?company=${companyId}`;
+    const {
+      mode,
+      storeName,
+      agentCode,
+      posAbbr,
+      deptCode,
+      posDate,
+      memo,
+      remittanceMethod,
+      staffName,
+      checkerName,
+      counterNo,
+      posBillNo,
+      totalAmount,
+      items,
+    } = body;
 
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
-    const CELF_API_URL = encodeURI(rawUrl);
+    const companyId = '340076c518';
 
-    const today = new Date().toISOString().split('T')[0];
-    const items = Array.isArray(body.items) && body.items.length > 0 ? body.items : [];
+    // テーブル名の決定
+    const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
+    const CELF_API_URL = encodeURI(
+      `https://api.cloud.celf.jp/v1/tables/${tableName}/record?company=${companyId}`
+    );
 
-    // 後日CB用の「振込No年月」と「振込No通番」の自動採番
-    const ymCode = getYearMonthCode(); // 例: "2609"
-    // タイムスタンプベースの仮通番生成（※CELF検索API開通までの重複防止用通番）
-    const generatedSeqNo = Math.floor(Date.now() % 10000); 
+    // CELFテーブルのカラム定義に合致するデータのみを抽出・整形
+    const records = (items || []).map((item: any) => {
+      const baseRecord: any = {
+        店舗名: storeName || '',
+        代理店コード: agentCode || '',
+        略称: posAbbr || '',
+        部門コード: deptCode || '',
+        POS登録日: posDate || '',
+        備考欄: memo || '',
+        担当者名: staffName || '',
+        Wチェック者名: checkerName || '',
+        還元項目: item.type || '',
+        申込書番号: item.appNo || '',
+        セット割申番: item.subAppNo || '',
+        金額: item.amount || 0,
+      };
 
-    const records = items.map((item: any, idx: number) => {
       if (mode === '即時') {
-        return {
-          "店舗名": body.storeName || "au Style イオンモールつくば",
-          "POS登録日": today,
-          "POS業務伝票番号": body.posBillNo || '',
-          "申込書番号": item.appNo || '',
-          "還元内容": item.type || '',
-          "セット割申番": item.subAppNo || '',
-          "件数": 1,
-          "還元金額": Number(item.amount) || 0,
-          "出金者": body.staffName || '',
-          "出金ダブルチェック": body.checkerName || '',
-          "金銭お渡しカウンター": body.counterNo || '',
-          "リスト入力者": body.staffName || '',
-        };
+        baseRecord['POS業務伝票番号'] = posBillNo || '';
+        baseRecord['お渡しカウンター'] = counterNo || '';
       } else {
-        return {
-          "店舗名": body.storeName || "au Style イオンモールつくば",
-          "POS登録日": today,
-          "申込書番号": item.appNo || '',
-          "還元内容": item.type || '',
-          "セット割申番": item.subAppNo || '',
-          "件数": 1,
-          "振込No年月": ymCode, // 例: "2609"
-          "振込No通番": generatedSeqNo + idx, // 連番
-          "還元金額": Number(item.amount) || 0,
-          "送金方法": body.remittanceMethod || '口座振替', // 新規追加項目
-          "担当": body.staffName || '',
-          "ダブルチェック": body.checkerName || '',
-        };
+        baseRecord['還元方法'] = remittanceMethod || '';
       }
+
+      return baseRecord;
     });
 
+    // CELF登録APIのリクエストペイロード構築
     const payload = {
-      [tableName]: records
+      [tableName]: records,
     };
 
     const response = await fetch(CELF_API_URL, {
@@ -76,40 +68,34 @@ export async function POST(request: Request) {
         'X-CELF-API-KEY': CELF_API_KEY,
       },
       body: JSON.stringify(payload),
+      cache: 'no-store',
     });
 
-    const resText = await response.text();
-    let resData;
+    const responseText = await response.text();
+    let data: any = {};
     try {
-      resData = JSON.parse(resText);
-    } catch {
-      resData = resText;
+      data = JSON.parse(responseText);
+    } catch (e) {
+      data = { rawText: responseText };
     }
 
     if (!response.ok) {
-      console.error('CELF API エラー詳細:', resData);
       return NextResponse.json(
         {
           success: false,
-          error: `CELF API Status ${response.status}: ${typeof resData === 'string' ? resData : JSON.stringify(resData)}`
+          error: `CELF API Status ${response.status}: ${JSON.stringify(data)}`,
         },
-        { status: response.status }
+        { status: 400 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      mode,
-      tableName,
-      transferNo: `${ymCode}-${generatedSeqNo}`,
-      recordCount: records.length,
-      data: resData,
+      data,
     });
-
   } catch (error: any) {
-    console.error('CELF API サーバーエラー:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to send data to CELF' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
