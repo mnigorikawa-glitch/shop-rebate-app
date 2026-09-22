@@ -6,16 +6,33 @@ export async function GET() {
     const companyId = '340076c518';
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
 
-    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}/get?company=${companyId}`;
+    // CELFテーブル検索・取得APIのエンドポイント
+    // searchエンドポイントと全件取得用ペイロードを構成
+    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}/search?company=${companyId}`;
     const CELF_API_URL = encodeURI(rawUrl);
 
-    const response = await fetch(CELF_API_URL, {
-      method: 'GET',
+    // POSTリクエストで空条件（全件取得）を送信するパターンとGETのフォールバック
+    let response = await fetch(CELF_API_URL, {
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
+      body: JSON.stringify({}),
       cache: 'no-store',
     });
+
+    // POSTで失敗した場合はGETエンドポイントで再試行
+    if (!response.ok) {
+      const getUrl = encodeURI(`https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`);
+      response = await fetch(getUrl, {
+        method: 'GET',
+        headers: {
+          'X-CELF-API-KEY': CELF_API_KEY,
+        },
+        cache: 'no-store',
+      });
+    }
 
     const responseText = await response.text();
     let data: any = {};
@@ -35,6 +52,7 @@ export async function GET() {
       });
     }
 
+    // レコード抽出
     const storeRecords = data[tableName] || data.data || (Array.isArray(data) ? data : []);
     const stores = storeRecords
       .map((row: any) => row.店舗名 || row.store_name)
