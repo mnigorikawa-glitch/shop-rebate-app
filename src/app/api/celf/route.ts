@@ -29,12 +29,18 @@ export async function POST(request: Request) {
       `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`
     );
 
-    // 受付月（当月1日 yyyy/mm/dd 形式）
+    // 受付月（当月1日 yyyy-MM-dd 形式）
     const today = new Date();
-    const receptionMonth = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/01`;
+    const receptionMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
 
-    // CELFテーブル構造（即時 / 後日）に100%一致させたレコード配列の生成
-    const rawRecords = (items || []).map((item: any) => {
+    // POS登録日を yyyy-MM-dd に標準化（ハイフン区切り）
+    let formattedPosDate = receptionMonth;
+    if (posDate) {
+      formattedPosDate = String(posDate).replace(/\//g, '-');
+    }
+
+    // CELFテーブル構造（即時 / 後日）に完全一致させたレコード配列生成
+    const records = (items || []).map((item: any) => {
       const amountNum = typeof item.amount === 'number' 
         ? item.amount 
         : Number(String(item.amount || '0').replace(/[^0-9.-]/g, '')) || 0;
@@ -46,7 +52,7 @@ export async function POST(request: Request) {
           '略称': String(posAbbr || ''),
           '受付月': receptionMonth,
           '部門コード': String(deptCode || ''),
-          'POS登録日': String(posDate || ''),
+          'POS登録日': formattedPosDate,
           '申込書番号': String(item.appNo || ''),
           '還元内容': String(item.type || ''),
           'セット割申番': String(item.subAppNo || ''),
@@ -66,7 +72,7 @@ export async function POST(request: Request) {
           '略称': String(posAbbr || ''),
           '受付月': receptionMonth,
           '部門コード': String(deptCode || ''),
-          'POS登録日': String(posDate || ''),
+          'POS登録日': formattedPosDate,
           '申込書番号': String(item.appNo || ''),
           '還元内容': String(item.type || ''),
           'セット割申番': String(item.subAppNo || ''),
@@ -80,59 +86,41 @@ export async function POST(request: Request) {
       }
     });
 
-    // 試行用構造（CELF公式の data ラッパー形式 / 配列直接形式）
-    const payloadCandidates = [
-      {
-        [tableName]: {
-          data: rawRecords,
-        },
+    // CELF公式仕様通りの正規JSON構造
+    const payload = {
+      [tableName]: records,
+    };
+
+    const response = await fetch(CELF_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-CELF-API-KEY': CELF_API_KEY,
       },
-      {
-        [tableName]: rawRecords,
-      },
-    ];
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
 
-    let lastStatus = 400;
-    let lastResponseData: any = null;
-    let isSuccess = false;
-
-    for (const payload of payloadCandidates) {
-      const response = await fetch(CELF_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          'X-CELF-API-KEY': CELF_API_KEY,
-        },
-        body: JSON.stringify(payload),
-        cache: 'no-store',
-      });
-
-      lastStatus = response.status;
-      const responseText = await response.text();
-
-      try {
-        lastResponseData = JSON.parse(responseText);
-      } catch (e) {
-        lastResponseData = { rawText: responseText };
-      }
-
-      if (response.ok) {
-        isSuccess = true;
-        break;
-      }
+    const responseText = await response.text();
+    let responseData: any = {};
+    try {
+      responseData = JSON.parse(responseText);
+    } catch (e) {
+      responseData = { rawText: responseText };
     }
 
-    if (!isSuccess) {
+    if (!response.ok) {
       return NextResponse.json({
         success: false,
-        httpStatus: lastStatus,
-        celfResponse: lastResponseData,
+        httpStatus: response.status,
+        celfResponse: responseData,
+        sentPayload: payload,
       });
     }
 
     return NextResponse.json({
       success: true,
-      data: lastResponseData,
+      data: responseData,
     });
   } catch (error: any) {
     return NextResponse.json({
