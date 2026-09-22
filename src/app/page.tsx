@@ -20,6 +20,7 @@ export default function Home() {
 
   // 基本情報
   const [storeName, setStoreName] = useState('au Style イオンモールつくば');
+  const [remittanceMethod, setRemittanceMethod] = useState<'口座振替' | 'ATM受取'>('口座振替'); // 還元方法（後日CB用）
   const [staffName, setStaffName] = useState('');
   const [checkerName, setCheckerName] = useState('');
   const [counterNo, setCounterNo] = useState('1');
@@ -29,10 +30,10 @@ export default function Home() {
   const [items, setItems] = useState<Array<{
     type: string;
     customType: string;
-    appNo: string; // 申込書番号 (内訳ごとに移動)
-    isExisting: boolean; // 「既存」ボタン状態
-    existingPlan: string; // 既存プラン選択
-    subAppNo: string; // セット割申番 (手動入力時)
+    appNo: string;
+    isExisting: boolean;
+    existingPlan: string;
+    subAppNo: string;
     amount: string;
   }>>([
     {
@@ -54,12 +55,6 @@ export default function Home() {
   const isDrawing = useRef(false);
 
   const totalAmount = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-
-  // --- CELF「還元内容」マスタ取得（API開通時に有効化） ---
-  useEffect(() => {
-    // 将来的にCELF APIからマスタを取得する処理をここに記述
-    // fetch('/api/celf/master/reduction').then(...).then(data => setReductionMaster(data));
-  }, []);
 
   // --- Canvas制御 ---
   useEffect(() => {
@@ -141,12 +136,10 @@ export default function Home() {
     const newItems = [...items];
     newItems[index] = { ...newItems[index], [field]: value };
 
-    // 還元内容が変更された場合、デフォルト金額とセット割対応状態を更新
     if (field === 'type') {
       const master = reductionMaster.find((m) => m.表記名 === value);
       if (master) {
         newItems[index].amount = String(master.還元基準額);
-        // セット割非対応になったら「既存」フラグもリセット
         if (String(master.セット割対応) !== 'true') {
           newItems[index].isExisting = false;
           newItems[index].subAppNo = '';
@@ -157,7 +150,6 @@ export default function Home() {
     setItems(newItems);
   };
 
-  // 指定された内訳がセット割対応（true）かどうか判定
   const isSetDiscountSupported = (typeName: string) => {
     const master = reductionMaster.find((m) => m.表記名 === typeName);
     return master ? String(master.セット割対応) === 'true' : false;
@@ -174,7 +166,6 @@ export default function Home() {
 
     try {
       const formattedItems = items.map((item) => {
-        // セット割申番の決定（既存選択時か手入力時か）
         let finalSubAppNo = '';
         if (isSetDiscountSupported(item.type)) {
           finalSubAppNo = item.isExisting ? item.existingPlan : item.subAppNo;
@@ -191,6 +182,7 @@ export default function Home() {
       const payload = {
         mode,
         storeName,
+        remittanceMethod: mode === '後日' ? remittanceMethod : '', // 還元方法を送信
         staffName,
         checkerName,
         counterNo: mode === '即時' ? counterNo : '',
@@ -208,6 +200,7 @@ export default function Home() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || '送信失敗');
 
+      alert(`受領書を保存しました。 (振込No: ${data.transferNo || '即時処理'})`);
       window.print();
     } catch (err: any) {
       alert(`エラー: ${err.message}`);
@@ -249,15 +242,31 @@ export default function Home() {
         <div className="space-y-4 mb-6">
           <h2 className="text-md font-bold text-slate-700 border-l-4 border-slate-700 pl-2 print:hidden">1. 基本情報</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">店舗名</label>
-              <input
-                type="text"
-                value={storeName}
-                disabled
-                className="w-full border border-slate-200 bg-slate-100 rounded p-2 text-sm font-semibold text-slate-700"
-              />
-            </div>
+            
+            {/* モードに応じた第1項目の切り替え */}
+            {mode === '即時' ? (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">店舗名</label>
+                <input
+                  type="text"
+                  value={storeName}
+                  disabled
+                  className="w-full border border-slate-200 bg-slate-100 rounded p-2 text-sm font-semibold text-slate-700"
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-blue-700 mb-1">還元方法 *</label>
+                <select
+                  value={remittanceMethod}
+                  onChange={(e) => setRemittanceMethod(e.target.value as '口座振替' | 'ATM受取')}
+                  className="w-full border border-blue-400 bg-blue-50 rounded p-2 text-sm font-bold text-blue-900 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="口座振替">口座振替</option>
+                  <option value="ATM受取">ATM受取</option>
+                </select>
+              </div>
+            )}
 
             {mode === '即時' ? (
               <>
@@ -290,7 +299,7 @@ export default function Home() {
                 <label className="block text-xs font-semibold text-slate-500 mb-1">振込No (自動採番)</label>
                 <input
                   type="text"
-                  value="自動生成 (YYMM-通番)"
+                  value="送信時に自動採番 (YYMM-通番)"
                   disabled
                   className="w-full border border-slate-200 bg-slate-100 rounded p-2 text-sm text-slate-500 italic"
                 />
@@ -362,7 +371,7 @@ export default function Home() {
                       )}
                     </div>
 
-                    {/* 申込書番号 (内訳へ移動) */}
+                    {/* 申込書番号 */}
                     <div className="md:col-span-3">
                       <label className="block text-xs text-slate-500 mb-1">申込書番号 *</label>
                       <input
