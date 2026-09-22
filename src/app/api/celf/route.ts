@@ -29,14 +29,14 @@ export async function POST(request: Request) {
       `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`
     );
 
-    // 受付月（当月1日 yyyy-MM-dd 形式）
+    // 受付月（当月1日 yyyy/MM/dd 形式）
     const today = new Date();
-    const receptionMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    const receptionMonth = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/01`;
 
-    // POS登録日を yyyy-MM-dd に標準化（ハイフン区切り）
+    // POS登録日のフォーマット（yyyy/MM/dd に統一）
     let formattedPosDate = receptionMonth;
     if (posDate) {
-      formattedPosDate = String(posDate).replace(/\//g, '-');
+      formattedPosDate = String(posDate).replace(/-/g, '/');
     }
 
     // CELFテーブル構造（即時 / 後日）に完全一致させたレコード配列生成
@@ -86,15 +86,17 @@ export async function POST(request: Request) {
       }
     });
 
-    // CELF公式仕様通りの正規JSON構造
+    // CELF 一括追加の標準仕様（テーブル名の中に rows 配列を入れる形式）
     const payload = {
-      [tableName]: records,
+      [tableName]: {
+        rows: records,
+      },
     };
 
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Type': 'application/json',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
       body: JSON.stringify(payload),
