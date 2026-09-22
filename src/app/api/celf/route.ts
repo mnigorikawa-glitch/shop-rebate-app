@@ -29,9 +29,8 @@ export async function POST(request: Request) {
       `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`
     );
 
-    // CELFのデータ型仕様に完全適合させたオブジェクト配列
+    // CELFテーブル構造に適合させたレコード配列の生成
     const records = (items || []).map((item: any) => {
-      // 数値型
       const amountNum = typeof item.amount === 'number' 
         ? item.amount 
         : Number(String(item.amount || '0').replace(/[^0-9.-]/g, '')) || 0;
@@ -61,8 +60,11 @@ export async function POST(request: Request) {
       return record;
     });
 
+    // CELF公式仕様：「テーブル名」の下に「rows」配列を配置する構造
     const payload = {
-      [tableName]: records,
+      [tableName]: {
+        rows: records,
+      },
     };
 
     const jsonString = JSON.stringify(payload);
@@ -70,7 +72,7 @@ export async function POST(request: Request) {
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
       body: jsonString,
@@ -90,7 +92,7 @@ export async function POST(request: Request) {
         success: false,
         httpStatus: response.status,
         celfResponse: responseData,
-        sentJson: payload, // 送信データ診断用
+        sentJson: payload,
       });
     }
 
