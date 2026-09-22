@@ -34,6 +34,7 @@ export async function GET() {
       });
     }
 
+    // レコード配列の抽出処理
     let records: any[] = [];
     if (Array.isArray(data[tableName])) {
       records = data[tableName];
@@ -41,6 +42,11 @@ export async function GET() {
       records = data.data;
     } else if (Array.isArray(data)) {
       records = data;
+    } else {
+      const firstArrayKey = Object.keys(data).find((key) => Array.isArray(data[key]));
+      if (firstArrayKey) {
+        records = data[firstArrayKey];
+      }
     }
 
     return NextResponse.json({

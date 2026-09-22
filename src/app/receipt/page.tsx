@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 // フォールバック用データ
@@ -51,16 +51,15 @@ export default function ReceiptPage() {
   const [counterNo, setCounterNo] = useState('1');
   const [posBillNo, setPosBillNo] = useState('');
 
-  // 還元内訳
+  // 還元内訳（個別の件数入力欄は削除）
   const [items, setItems] = useState<Array<{
     type: string;
     customType: string;
-    isExisting: boolean; // 「既存」ボタン状態（申込書番号に適用）
-    existingPlan: string; // 既存プラン選択
-    appNo: string; // 申込書番号 (手入力時)
-    subAppNo: string; // セット割申番
-    amount: string; // 還元単価
-    quantity: number; // 件数
+    isExisting: boolean;
+    existingPlan: string;
+    appNo: string;
+    subAppNo: string;
+    amount: string;
   }>>([
     {
       type: 'auUQ_SIM単体MNP',
@@ -70,7 +69,6 @@ export default function ReceiptPage() {
       appNo: '',
       subAppNo: '',
       amount: '20000',
-      quantity: 1,
     },
   ]);
 
@@ -81,11 +79,43 @@ export default function ReceiptPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawing = useRef(false);
 
-  // 合計金額（単価 × 件数の合計）
-  const totalAmount = items.reduce(
-    (sum, item) => sum + (Number(item.amount) || 0) * (item.quantity || 1),
-    0
-  );
+  // セット割対応チェック（自宅セット割など）
+  const isSetDiscountSupported = (typeName: string) => {
+    const master = reductionMaster.find(
+      (m) => (m.表記名 || m.還元項目) === typeName
+    );
+    return master ? String(master.セット割対応) === 'true' : false;
+  };
+
+  // --- 同一項目の自動集計処理（テーブル表示用） ---
+  const aggregatedSummary = useMemo(() => {
+    const map = new Map<string, { typeName: string; unitPrice: number; count: number; total: number }>();
+
+    items.forEach((item) => {
+      const typeName = item.type === 'その他（手入力）' ? (item.customType || 'その他') : item.type;
+      const unitPrice = Number(item.amount) || 0;
+
+      if (map.has(typeName)) {
+        const current = map.get(typeName)!;
+        current.count += 1;
+        current.total += unitPrice;
+      } else {
+        map.set(typeName, {
+          typeName,
+          unitPrice,
+          count: 1,
+          total: unitPrice,
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [items]);
+
+  // 合計還元額
+  const totalAmount = useMemo(() => {
+    return aggregatedSummary.reduce((sum, item) => sum + item.total, 0);
+  }, [aggregatedSummary]);
 
   // --- Canvas制御 ---
   useEffect(() => {
@@ -154,7 +184,6 @@ export default function ReceiptPage() {
         appNo: '',
         subAppNo: '',
         amount: String(defaultMaster.還元基準額 ?? 20000),
-        quantity: 1,
       },
     ]);
   };
@@ -174,21 +203,15 @@ export default function ReceiptPage() {
       );
       if (master) {
         newItems[index].amount = String(master.還元基準額 ?? 0);
-        // セット割非対応の場合はセット割申番をクリア
+        // セット割対応以外なら「既存」状態・セット割申番をリセット
         if (String(master.セット割対応) !== 'true') {
+          newItems[index].isExisting = false;
           newItems[index].subAppNo = '';
         }
       }
     }
 
     setItems(newItems);
-  };
-
-  const isSetDiscountSupported = (typeName: string) => {
-    const master = reductionMaster.find(
-      (m) => (m.表記名 || m.還元項目) === typeName
-    );
-    return master ? String(master.セット割対応) === 'true' : false;
   };
 
   // --- 送信処理 ---
@@ -210,8 +233,6 @@ export default function ReceiptPage() {
           appNo: finalAppNo,
           subAppNo: isSetDiscountSupported(item.type) ? item.subAppNo : '',
           amount: Number(item.amount) || 0,
-          quantity: Number(item.quantity) || 1,
-          total: (Number(item.amount) || 0) * (Number(item.quantity) || 1),
         };
       });
 
@@ -225,6 +246,7 @@ export default function ReceiptPage() {
         posBillNo: mode === '即時' ? posBillNo : '',
         totalAmount,
         items: formattedItems,
+        summary: aggregatedSummary,
       };
 
       const res = await fetch('/api/celf', {
@@ -420,24 +442,26 @@ export default function ReceiptPage() {
                       )}
                     </div>
 
-                    {/* 申込書番号 (「既存」トグル配置) */}
+                    {/* 申込書番号（自宅セット割対応時のみ「既存」トグル活性化） */}
                     <div className="md:col-span-3">
                       <div className="flex justify-between items-center mb-1">
                         <label className="text-xs text-slate-500">申込書番号 *</label>
-                        <button
-                          type="button"
-                          onClick={() => updateItem(index, 'isExisting', !item.isExisting)}
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all ${
-                            item.isExisting
-                              ? 'bg-orange-500 text-white'
-                              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                          }`}
-                        >
-                          既存
-                        </button>
+                        {setSupported && (
+                          <button
+                            type="button"
+                            onClick={() => updateItem(index, 'isExisting', !item.isExisting)}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all ${
+                              item.isExisting
+                                ? 'bg-orange-500 text-white'
+                                : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                            }`}
+                          >
+                            既存
+                          </button>
+                        )}
                       </div>
 
-                      {item.isExisting ? (
+                      {setSupported && item.isExisting ? (
                         <select
                           value={item.existingPlan}
                           onChange={(e) => updateItem(index, 'existingPlan', e.target.value)}
@@ -458,7 +482,7 @@ export default function ReceiptPage() {
                     </div>
 
                     {/* セット割申番 */}
-                    <div className="md:col-span-2">
+                    <div className="md:col-span-3">
                       <label className={`block text-xs mb-1 ${setSupported ? 'text-slate-500' : 'text-slate-300'}`}>
                         セット割申番
                       </label>
@@ -482,35 +506,23 @@ export default function ReceiptPage() {
 
                     {/* 還元単価 */}
                     <div className="md:col-span-2">
-                      <label className="block text-xs text-slate-500 mb-1">還元単価 (円)</label>
-                      <input
-                        type="number"
-                        value={item.amount}
-                        onChange={(e) => updateItem(index, 'amount', e.target.value)}
-                        className="w-full border border-slate-300 rounded p-1.5 text-sm text-right font-mono"
-                      />
-                    </div>
-
-                    {/* 件数 & 削除 */}
-                    <div className="md:col-span-1">
                       <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs text-slate-500">件数</label>
+                        <label className="text-xs text-slate-500">還元単価 (円)</label>
                         {items.length > 1 && (
                           <button
                             type="button"
                             onClick={() => removeItem(index)}
                             className="text-red-500 text-xs font-bold hover:underline"
                           >
-                            ×
+                            削除
                           </button>
                         )}
                       </div>
                       <input
                         type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => updateItem(index, 'quantity', Math.max(1, Number(e.target.value)))}
-                        className="w-full border border-slate-300 rounded p-1.5 text-sm text-center font-mono"
+                        value={item.amount}
+                        onChange={(e) => updateItem(index, 'amount', e.target.value)}
+                        className="w-full border border-slate-300 rounded p-1.5 text-sm text-right font-mono"
                       />
                     </div>
 
@@ -520,7 +532,7 @@ export default function ReceiptPage() {
             })}
           </div>
 
-          {/* 【TNK帳票参照】還元内訳一覧表 (画面＆印刷用) */}
+          {/* 集計後の還元内訳一覧表 (画面＆印刷用) */}
           <div className="mt-4 border border-slate-300 rounded-lg overflow-hidden">
             <table className="w-full text-sm text-left border-collapse">
               <thead>
@@ -532,28 +544,22 @@ export default function ReceiptPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, idx) => {
-                  const unitPrice = Number(item.amount) || 0;
-                  const qty = Number(item.quantity) || 1;
-                  const lineTotal = unitPrice * qty;
-
-                  return (
-                    <tr key={idx} className="border-b border-slate-200">
-                      <td className="p-2 border-r border-slate-200">
-                        {item.type === 'その他（手入力）' ? item.customType || 'その他' : item.type}
-                      </td>
-                      <td className="p-2 border-r border-slate-200 text-right font-mono">
-                        ¥ {unitPrice.toLocaleString()}
-                      </td>
-                      <td className="p-2 border-r border-slate-200 text-center font-mono">
-                        {qty}
-                      </td>
-                      <td className="p-2 text-right font-mono font-semibold">
-                        ¥ {lineTotal.toLocaleString()}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {aggregatedSummary.map((summaryItem, idx) => (
+                  <tr key={idx} className="border-b border-slate-200">
+                    <td className="p-2 border-r border-slate-200">
+                      {summaryItem.typeName}
+                    </td>
+                    <td className="p-2 border-r border-slate-200 text-right font-mono">
+                      ¥ {summaryItem.unitPrice.toLocaleString()}
+                    </td>
+                    <td className="p-2 border-r border-slate-200 text-center font-mono font-bold text-slate-700">
+                      {summaryItem.count}
+                    </td>
+                    <td className="p-2 text-right font-mono font-semibold">
+                      ¥ {summaryItem.total.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50 font-bold text-slate-800">
