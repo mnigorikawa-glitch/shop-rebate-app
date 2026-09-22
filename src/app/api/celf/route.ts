@@ -33,8 +33,8 @@ export async function POST(request: Request) {
     const today = new Date();
     const receptionMonth = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/01`;
 
-    // CELFテーブル構造（即時 / 後日）にそれぞれ100%一致させたレコード生成
-    const records = (items || []).map((item: any) => {
+    // CELFテーブル構造（即時 / 後日）に100%一致させたレコード配列の生成
+    const rawRecords = (items || []).map((item: any) => {
       const amountNum = typeof item.amount === 'number' 
         ? item.amount 
         : Number(String(item.amount || '0').replace(/[^0-9.-]/g, '')) || 0;
@@ -80,40 +80,59 @@ export async function POST(request: Request) {
       }
     });
 
-    const payload = {
-      [tableName]: records,
-    };
-
-    const response = await fetch(CELF_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'X-CELF-API-KEY': CELF_API_KEY,
+    // 試行用構造（CELF公式の data ラッパー形式 / 配列直接形式）
+    const payloadCandidates = [
+      {
+        [tableName]: {
+          data: rawRecords,
+        },
       },
-      body: JSON.stringify(payload),
-      cache: 'no-store',
-    });
+      {
+        [tableName]: rawRecords,
+      },
+    ];
 
-    const responseText = await response.text();
-    let responseData: any = {};
-    try {
-      responseData = JSON.parse(responseText);
-    } catch (e) {
-      responseData = { rawText: responseText };
+    let lastStatus = 400;
+    let lastResponseData: any = null;
+    let isSuccess = false;
+
+    for (const payload of payloadCandidates) {
+      const response = await fetch(CELF_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'X-CELF-API-KEY': CELF_API_KEY,
+        },
+        body: JSON.stringify(payload),
+        cache: 'no-store',
+      });
+
+      lastStatus = response.status;
+      const responseText = await response.text();
+
+      try {
+        lastResponseData = JSON.parse(responseText);
+      } catch (e) {
+        lastResponseData = { rawText: responseText };
+      }
+
+      if (response.ok) {
+        isSuccess = true;
+        break;
+      }
     }
 
-    if (!response.ok) {
+    if (!isSuccess) {
       return NextResponse.json({
         success: false,
-        httpStatus: response.status,
-        celfResponse: responseData,
-        sentJson: payload,
+        httpStatus: lastStatus,
+        celfResponse: lastResponseData,
       });
     }
 
     return NextResponse.json({
       success: true,
-      data: responseData,
+      data: lastResponseData,
     });
   } catch (error: any) {
     return NextResponse.json({
