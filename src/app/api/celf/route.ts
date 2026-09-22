@@ -29,38 +29,57 @@ export async function POST(request: Request) {
       `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`
     );
 
-    // CELFテーブル構造に適合させたレコード配列の生成
+    // 受付月（当月1日 yyyy/mm/dd 形式）
+    const today = new Date();
+    const receptionMonth = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/01`;
+
+    // CELFテーブル構造（即時 / 後日）にそれぞれ100%一致させたレコード生成
     const records = (items || []).map((item: any) => {
       const amountNum = typeof item.amount === 'number' 
         ? item.amount 
         : Number(String(item.amount || '0').replace(/[^0-9.-]/g, '')) || 0;
 
-      const record: Record<string, any> = {
-        '店舗名': storeName ? String(storeName) : '',
-        '代理店コード': agentCode ? String(agentCode) : '',
-        '略称': posAbbr ? String(posAbbr) : '',
-        '部門コード': deptCode ? String(deptCode) : '',
-        'POS登録日': posDate ? String(posDate) : '',
-        '備考欄': memo ? String(memo) : '',
-        '担当者名': staffName ? String(staffName) : '',
-        'Wチェック者名': checkerName ? String(checkerName) : '',
-        '還元項目': item.type ? String(item.type) : '',
-        '申込書番号': item.appNo ? String(item.appNo) : '',
-        'セット割申番': item.subAppNo ? String(item.subAppNo) : '',
-        '金額': amountNum,
-      };
-
       if (mode === '即時') {
-        record['POS業務伝票番号'] = posBillNo ? String(posBillNo) : '';
-        record['お渡しカウンター'] = counterNo ? String(counterNo) : '';
+        return {
+          '店舗名': String(storeName || ''),
+          '代理店コード': String(agentCode || ''),
+          '略称': String(posAbbr || ''),
+          '受付月': receptionMonth,
+          '部門コード': String(deptCode || ''),
+          'POS登録日': String(posDate || ''),
+          '申込書番号': String(item.appNo || ''),
+          '還元内容': String(item.type || ''),
+          'セット割申番': String(item.subAppNo || ''),
+          '件数': 1,
+          '還元金額': amountNum,
+          '出金者': String(staffName || ''),
+          '出金ダブルチェック': String(checkerName || ''),
+          '接客カウンター番号': String(counterNo || ''),
+          '備考欄': String(memo || ''),
+          'POS業務伝票番号': String(posBillNo || ''),
+          'リスト入力者': String(staffName || ''),
+        };
       } else {
-        record['還元方法'] = remittanceMethod ? String(remittanceMethod) : '';
+        return {
+          '店舗名': String(storeName || ''),
+          '代理店コード': String(agentCode || ''),
+          '略称': String(posAbbr || ''),
+          '受付月': receptionMonth,
+          '部門コード': String(deptCode || ''),
+          'POS登録日': String(posDate || ''),
+          '申込書番号': String(item.appNo || ''),
+          '還元内容': String(item.type || ''),
+          'セット割申番': String(item.subAppNo || ''),
+          '件数': 1,
+          '還元金額': amountNum,
+          '送金方法': String(remittanceMethod || ''),
+          '担当': String(staffName || ''),
+          'ダブルチェック': String(checkerName || ''),
+          '備考欄': String(memo || ''),
+        };
       }
-
-      return record;
     });
 
-    // CELF一括登録仕様（テーブル名の中に配列を直置き）
     const payload = {
       [tableName]: records,
     };
