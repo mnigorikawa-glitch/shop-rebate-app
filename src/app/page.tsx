@@ -2,19 +2,21 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 
-// よく使われる還元内容の選択肢リスト
-const REDUCTION_TYPES = [
-  'auUQ_SIM単体MNP',
-  '自宅セット割(ネットコース)',
-  '自宅セット割(でんき)',
-  'auPAYゴールドカード',
-  '当日特典キャッシュバック',
-  'その他（手入力）',
+// CELFマスタ取得失敗時のフォールバックデータ
+const DEFAULT_REDUCTION_MASTER = [
+  { 表記名: 'auUQ_SIM単体MNP', 還元基準額: 20000, セット割対応: 'false' },
+  { 表記名: '自宅セット割(ネットコース)', 還元基準額: 5000, セット割対応: 'true' },
+  { 表記名: '自宅セット割(でんきコース)', 還元基準額: 5000, セット割対応: 'true' },
+  { 表記名: 'auPAYゴールドカード', 還元基準額: 5000, セット割対応: 'false' },
+  { 表記名: '当日特典キャッシュバック', 還元基準額: 5000, セット割対応: 'false' },
+  { 表記名: 'その他（手入力）', 還元基準額: 0, セット割対応: 'false' },
 ];
 
 export default function Home() {
-  // モード選択 ('即時' | '後日')
   const [mode, setMode] = useState<'即時' | '後日'>('即時');
+
+  // マスタデータ
+  const [reductionMaster, setReductionMaster] = useState(DEFAULT_REDUCTION_MASTER);
 
   // 基本情報
   const [storeName, setStoreName] = useState('au Style イオンモールつくば');
@@ -22,32 +24,49 @@ export default function Home() {
   const [checkerName, setCheckerName] = useState('');
   const [counterNo, setCounterNo] = useState('1');
   const [posBillNo, setPosBillNo] = useState('');
-  const [applicationNumber, setApplicationNumber] = useState('');
 
-  // 還元内訳（複数追加対応）
-  const [items, setItems] = useState<Array<{ type: string; customType: string; subAppNo: string; amount: string }>>([
-    { type: 'auUQ_SIM単体MNP', customType: '', subAppNo: '', amount: '' },
+  // 還元内訳（申込書番号を各行に配置）
+  const [items, setItems] = useState<Array<{
+    type: string;
+    customType: string;
+    appNo: string; // 申込書番号 (内訳ごとに移動)
+    isExisting: boolean; // 「既存」ボタン状態
+    existingPlan: string; // 既存プラン選択
+    subAppNo: string; // セット割申番 (手動入力時)
+    amount: string;
+  }>>([
+    {
+      type: 'auUQ_SIM単体MNP',
+      customType: '',
+      appNo: '',
+      isExisting: false,
+      existingPlan: '既存+トクトク2',
+      subAppNo: '',
+      amount: '20000',
+    },
   ]);
 
-  // 免責チェック & サイン
   const [agreed, setAgreed] = useState(false);
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
 
-  // Canvas関連
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawing = useRef(false);
 
-  // 金額合計
   const totalAmount = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
-  // --- Canvas制御 (手書きサイン) ---
+  // --- CELF「還元内容」マスタ取得（API開通時に有効化） ---
+  useEffect(() => {
+    // 将来的にCELF APIからマスタを取得する処理をここに記述
+    // fetch('/api/celf/master/reduction').then(...).then(data => setReductionMaster(data));
+  }, []);
+
+  // --- Canvas制御 ---
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.strokeStyle = '#000';
@@ -62,9 +81,7 @@ export default function Home() {
     if (isDrawing.current) {
       isDrawing.current = false;
       const canvas = canvasRef.current;
-      if (canvas) {
-        setSignatureData(canvas.toDataURL());
-      }
+      if (canvas) setSignatureData(canvas.toDataURL());
     }
   };
 
@@ -98,9 +115,21 @@ export default function Home() {
     setSignatureData(null);
   };
 
-  // --- 還元内訳の追加 / 削除 / 変更 ---
+  // --- 内訳操作 ---
   const addItem = () => {
-    setItems([...items, { type: 'auUQ_SIM単体MNP', customType: '', subAppNo: '', amount: '' }]);
+    const defaultMaster = reductionMaster[0];
+    setItems([
+      ...items,
+      {
+        type: defaultMaster.表記名,
+        customType: '',
+        appNo: '',
+        isExisting: false,
+        existingPlan: '既存+トクトク2',
+        subAppNo: '',
+        amount: String(defaultMaster.還元基準額),
+      },
+    ]);
   };
 
   const removeItem = (index: number) => {
@@ -108,38 +137,57 @@ export default function Home() {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  const updateItem = (index: number, field: string, value: string) => {
+  const updateItem = (index: number, field: string, value: any) => {
     const newItems = [...items];
     newItems[index] = { ...newItems[index], [field]: value };
+
+    // 還元内容が変更された場合、デフォルト金額とセット割対応状態を更新
+    if (field === 'type') {
+      const master = reductionMaster.find((m) => m.表記名 === value);
+      if (master) {
+        newItems[index].amount = String(master.還元基準額);
+        // セット割非対応になったら「既存」フラグもリセット
+        if (String(master.セット割対応) !== 'true') {
+          newItems[index].isExisting = false;
+          newItems[index].subAppNo = '';
+        }
+      }
+    }
+
     setItems(newItems);
   };
 
-  // 既存回線用入力補完
-  const appendExistingPrefix = (index: number, prefix: string) => {
-    const currentVal = items[index].subAppNo;
-    if (!currentVal.startsWith('既存')) {
-      updateItem(index, 'subAppNo', `既存${prefix}${currentVal}`);
-    }
+  // 指定された内訳がセット割対応（true）かどうか判定
+  const isSetDiscountSupported = (typeName: string) => {
+    const master = reductionMaster.find((m) => m.表記名 === typeName);
+    return master ? String(master.セット割対応) === 'true' : false;
   };
 
-  // --- 送信 & 印刷処理 ---
+  // --- 送信処理 ---
   const handleSubmit = async () => {
-    if (!staffName) {
-      alert('担当スタッフ名を入力してください。');
-      return;
-    }
-    if (!applicationNumber) {
-      alert('申込書番号を入力してください。');
-      return;
-    }
-    if (!signatureData) {
-      alert('お客様署名（サイン）をお願いいたします。');
-      return;
-    }
+    if (!staffName) return alert('担当者名を入力してください。');
+    if (mode === '即時' && !posBillNo) return alert('POS業務伝票番号を入力してください。');
+    if (items.some((item) => !item.appNo)) return alert('全ての還元内訳に申込書番号を入力してください。');
+    if (!signatureData) return alert('お客様署名（サイン）をお願いいたします。');
 
     setIsSending(true);
 
     try {
+      const formattedItems = items.map((item) => {
+        // セット割申番の決定（既存選択時か手入力時か）
+        let finalSubAppNo = '';
+        if (isSetDiscountSupported(item.type)) {
+          finalSubAppNo = item.isExisting ? item.existingPlan : item.subAppNo;
+        }
+
+        return {
+          type: item.type === 'その他（手入力）' ? item.customType : item.type,
+          appNo: item.appNo,
+          subAppNo: finalSubAppNo,
+          amount: Number(item.amount) || 0,
+        };
+      });
+
       const payload = {
         mode,
         storeName,
@@ -147,13 +195,8 @@ export default function Home() {
         checkerName,
         counterNo: mode === '即時' ? counterNo : '',
         posBillNo: mode === '即時' ? posBillNo : '',
-        applicationNumber,
         totalAmount,
-        items: items.map(item => ({
-          type: item.type === 'その他（手入力）' ? item.customType : item.type,
-          subAppNo: item.subAppNo,
-          amount: Number(item.amount) || 0,
-        })),
+        items: formattedItems,
       };
 
       const res = await fetch('/api/celf', {
@@ -163,12 +206,8 @@ export default function Home() {
       });
 
       const data = await res.json();
+      if (!data.success) throw new Error(data.error || '送信失敗');
 
-      if (!data.success) {
-        throw new Error(data.error || 'CELFへのデータ送信に失敗しました。');
-      }
-
-      // 送信成功後に印刷ダイアログを起動
       window.print();
     } catch (err: any) {
       alert(`エラー: ${err.message}`);
@@ -179,9 +218,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8 font-sans">
-      <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-md p-6 print:shadow-none print:p-0">
+      <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-md p-6 print:shadow-none print:p-0">
         
-        {/* ヘッダー & モード切り替え */}
+        {/* ヘッダー */}
         <div className="border-b pb-4 mb-6 print:hidden">
           <h1 className="text-xl font-bold text-slate-800 text-center mb-4">キャッシュバック受領書 作成</h1>
           <div className="grid grid-cols-2 gap-2 bg-slate-200 p-1 rounded-lg">
@@ -206,13 +245,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 印刷用タイトル */}
-        <div className="hidden print:block text-center mb-6">
-          <h1 className="text-2xl font-bold border-b-2 border-black pb-2">
-            キャッシュバック受領書 ({mode})
-          </h1>
-        </div>
-
         {/* 1. 基本情報 */}
         <div className="space-y-4 mb-6">
           <h2 className="text-md font-bold text-slate-700 border-l-4 border-slate-700 pl-2 print:hidden">1. 基本情報</h2>
@@ -222,25 +254,15 @@ export default function Home() {
               <input
                 type="text"
                 value={storeName}
-                onChange={(e) => setStoreName(e.target.value)}
-                className="w-full border border-slate-300 rounded p-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">申込書番号 *</label>
-              <input
-                type="text"
-                placeholder="例: EAD123456"
-                value={applicationNumber}
-                onChange={(e) => setApplicationNumber(e.target.value)}
-                className="w-full border border-slate-300 rounded p-2 text-sm font-mono"
+                disabled
+                className="w-full border border-slate-200 bg-slate-100 rounded p-2 text-sm font-semibold text-slate-700"
               />
             </div>
 
-            {mode === '即時' && (
+            {mode === '即時' ? (
               <>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">POS業務伝票番号</label>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">POS業務伝票番号 *</label>
                   <input
                     type="text"
                     placeholder="例: A01234567"
@@ -263,6 +285,16 @@ export default function Home() {
                   </select>
                 </div>
               </>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">振込No (自動採番)</label>
+                <input
+                  type="text"
+                  value="自動生成 (YYMM-通番)"
+                  disabled
+                  className="w-full border border-slate-200 bg-slate-100 rounded p-2 text-sm text-slate-500 italic"
+                />
+              </div>
             )}
 
             <div>
@@ -299,77 +331,125 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="space-y-3">
-            {items.map((item, index) => (
-              <div key={index} className="p-3 bg-slate-50 border rounded-lg space-y-2 print:bg-white print:border-b print:p-1">
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
-                  <div className="md:col-span-5">
-                    <label className="block text-xs text-slate-500 print:hidden">還元内容</label>
-                    <select
-                      value={item.type}
-                      onChange={(e) => updateItem(index, 'type', e.target.value)}
-                      className="w-full border border-slate-300 rounded p-1.5 text-sm bg-white"
-                    >
-                      {REDUCTION_TYPES.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-                    {item.type === 'その他（手入力）' && (
-                      <input
-                        type="text"
-                        placeholder="還元内容を入力"
-                        value={item.customType}
-                        onChange={(e) => updateItem(index, 'customType', e.target.value)}
-                        className="w-full border border-slate-300 rounded p-1.5 text-sm mt-1"
-                      />
-                    )}
-                  </div>
+          <div className="space-y-4">
+            {items.map((item, index) => {
+              const setSupported = isSetDiscountSupported(item.type);
 
-                  <div className="md:col-span-4">
-                    <label className="block text-xs text-slate-500 print:hidden">セット割申番 (グループ登録)</label>
-                    <div className="flex gap-1">
+              return (
+                <div key={index} className="p-3 bg-slate-50 border rounded-lg space-y-3 print:bg-white print:p-1">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
+                    
+                    {/* 還元内容 */}
+                    <div className="md:col-span-4">
+                      <label className="block text-xs text-slate-500 mb-1">還元内容 *</label>
+                      <select
+                        value={item.type}
+                        onChange={(e) => updateItem(index, 'type', e.target.value)}
+                        className="w-full border border-slate-300 rounded p-1.5 text-sm bg-white"
+                      >
+                        {reductionMaster.map((m) => (
+                          <option key={m.表記名} value={m.表記名}>{m.表記名}</option>
+                        ))}
+                      </select>
+                      {item.type === 'その他（手入力）' && (
+                        <input
+                          type="text"
+                          placeholder="還元内容を入力"
+                          value={item.customType}
+                          onChange={(e) => updateItem(index, 'customType', e.target.value)}
+                          className="w-full border border-slate-300 rounded p-1.5 text-sm mt-1"
+                        />
+                      )}
+                    </div>
+
+                    {/* 申込書番号 (内訳へ移動) */}
+                    <div className="md:col-span-3">
+                      <label className="block text-xs text-slate-500 mb-1">申込書番号 *</label>
                       <input
                         type="text"
-                        placeholder="例: EQ123456"
-                        value={item.subAppNo}
-                        onChange={(e) => updateItem(index, 'subAppNo', e.target.value)}
+                        placeholder="例: EAD123456"
+                        value={item.appNo}
+                        onChange={(e) => updateItem(index, 'appNo', e.target.value)}
                         className="w-full border border-slate-300 rounded p-1.5 text-sm font-mono"
                       />
-                      <button
-                        type="button"
-                        onClick={() => appendExistingPrefix(index, 'au')}
-                        className="text-[10px] bg-slate-200 px-1.5 rounded whitespace-nowrap hover:bg-slate-300 print:hidden"
-                      >
-                        既存au
-                      </button>
                     </div>
-                  </div>
 
-                  <div className="md:col-span-2">
-                    <label className="block text-xs text-slate-500 print:hidden">金額 (円)</label>
-                    <input
-                      type="number"
-                      placeholder="5000"
-                      value={item.amount}
-                      onChange={(e) => updateItem(index, 'amount', e.target.value)}
-                      className="w-full border border-slate-300 rounded p-1.5 text-sm text-right font-mono"
-                    />
-                  </div>
+                    {/* セット割申番 & 既存ボタン */}
+                    <div className="md:col-span-3">
+                      <div className="flex justify-between items-center mb-1">
+                        <label className={`text-xs ${setSupported ? 'text-slate-500' : 'text-slate-300'}`}>
+                          セット割申番
+                        </label>
+                        {setSupported && (
+                          <button
+                            type="button"
+                            onClick={() => updateItem(index, 'isExisting', !item.isExisting)}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all ${
+                              item.isExisting
+                                ? 'bg-orange-500 text-white'
+                                : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                            }`}
+                          >
+                            既存
+                          </button>
+                        )}
+                      </div>
 
-                  {items.length > 1 && (
-                    <div className="md:col-span-1 text-right print:hidden">
-                      <button
-                        type="button"
-                        onClick={() => removeItem(index)}
-                        className="text-red-500 text-xs font-bold p-1 hover:bg-red-50 rounded"
-                      >
-                        削除
-                      </button>
+                      {setSupported ? (
+                        item.isExisting ? (
+                          <select
+                            value={item.existingPlan}
+                            onChange={(e) => updateItem(index, 'existingPlan', e.target.value)}
+                            className="w-full border border-orange-400 bg-orange-50 rounded p-1.5 text-sm font-semibold text-orange-900"
+                          >
+                            <option value="既存+トクトク2">既存+トクトク2</option>
+                            <option value="既存+コミコミバリュー">既存+コミコミバリュー</option>
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="例: EQ123456"
+                            value={item.subAppNo}
+                            onChange={(e) => updateItem(index, 'subAppNo', e.target.value)}
+                            className="w-full border border-slate-300 rounded p-1.5 text-sm font-mono bg-white"
+                          />
+                        )
+                      ) : (
+                        <input
+                          type="text"
+                          disabled
+                          placeholder="対象外"
+                          className="w-full border border-slate-200 bg-slate-100 rounded p-1.5 text-sm text-slate-400 cursor-not-allowed"
+                        />
+                      )}
                     </div>
-                  )}
+
+                    {/* 金額 */}
+                    <div className="md:col-span-2">
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-xs text-slate-500">金額 (円)</label>
+                        {items.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeItem(index)}
+                            className="text-red-500 text-xs font-bold hover:underline print:hidden"
+                          >
+                            削除
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="number"
+                        value={item.amount}
+                        onChange={(e) => updateItem(index, 'amount', e.target.value)}
+                        className="w-full border border-slate-300 rounded p-1.5 text-sm text-right font-mono"
+                      />
+                    </div>
+
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="flex justify-between items-center bg-slate-100 p-3 rounded-lg mt-3 print:bg-white print:border-t">
@@ -395,10 +475,6 @@ export default function Home() {
                 : '上記内容にて後日口座振込による還元手続きを申請・同意いたします。'}
             </span>
           </label>
-
-          <div className="print:block text-xs text-slate-600 mb-2 hidden">
-            【受領確認】{mode === '即時' ? '上記金額を本日現金にて確かに受領いたしました。' : '上記内容にて後日口座振込による還元手続きを承りました。'}
-          </div>
 
           <div className="border border-slate-300 rounded-lg p-2 bg-slate-50 relative print:bg-white">
             <div className="flex justify-between text-xs text-slate-500 mb-1 print:hidden">
