@@ -26,9 +26,9 @@ export async function POST(request: Request) {
     // テーブル名の決定
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
     
-    // CELF レコード作成 (POST) 用エンドポイント URL
+    // CELF レコード登録(作成)用エンドポイント URL
     const CELF_API_URL = encodeURI(
-      `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`
+      `https://api.cloud.celf.jp/v1/tables/${tableName}/record?company=${companyId}`
     );
 
     // CELFテーブルのカラム定義に合致するデータのみを抽出・整形
