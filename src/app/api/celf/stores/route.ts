@@ -6,7 +6,6 @@ export async function GET() {
     const companyId = '340076c518';
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
 
-    // CELF公式仕様のエンドポイント (一括取得API)
     const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`;
     const CELF_API_URL = encodeURI(rawUrl);
 
@@ -35,31 +34,34 @@ export async function GET() {
       });
     }
 
-    // レコード配列の柔軟な抽出（テーブル名キー、dataキー、またはレスポンス直下の配列に対応）
-    let storeRecords: any[] = [];
+    let records: any[] = [];
     if (Array.isArray(data[tableName])) {
-      storeRecords = data[tableName];
+      records = data[tableName];
     } else if (Array.isArray(data.data)) {
-      storeRecords = data.data;
+      records = data.data;
     } else if (Array.isArray(data)) {
-      storeRecords = data;
+      records = data;
     } else {
-      // 想定外の構造だった場合、レスポンスオブジェクト内の最初の配列を探す
       const firstArrayKey = Object.keys(data).find((key) => Array.isArray(data[key]));
       if (firstArrayKey) {
-        storeRecords = data[firstArrayKey];
+        records = data[firstArrayKey];
       }
     }
 
-    // カラム名「店舗名」の抽出
-    const stores = storeRecords
-      .map((row: any) => row.店舗名 || row.store_name)
-      .filter(Boolean);
+    // 全フィールドを含んだ店舗オブジェクトとして返す
+    const stores = records.map((row: any) => ({
+      storeName: row.店舗名 || row.store_name || '',
+      agentCode: row.代理店コード || '',
+      posAbbr: row.POS略称 || '',
+      deptCode: row.部門コード || '',
+      zipCode: row.郵便番号 || '',
+      address: row.住所 || '',
+      branchFlag: Number(row.出張所フラグ ?? 0),
+    })).filter((s) => s.storeName !== '');
 
     return NextResponse.json({
       success: true,
       stores,
-      rawCount: storeRecords.length,
     });
   } catch (error: any) {
     return NextResponse.json({

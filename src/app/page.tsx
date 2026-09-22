@@ -3,35 +3,27 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-// API接続失敗時のデフォルト店舗リスト
-const DEFAULT_STORES = [
-  'au Style イオンモールつくば',
-  'au Style イオンモール土浦',
-  'auショップ 水戸南',
-  'auショップ つくば研究学園',
-];
-
 export default function LoginPage() {
   const router = useRouter();
-  const [stores, setStores] = useState<string[]>(DEFAULT_STORES);
-  const [selectedStore, setSelectedStore] = useState<string>('');
+  const [storeList, setStoreList] = useState<any[]>([]);
+  const [selectedStoreName, setSelectedStoreName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // CELFから店舗データベースを取得
   useEffect(() => {
     async function fetchStores() {
       try {
         const res = await fetch('/api/celf/stores');
         const data = await res.json();
         if (data.success && Array.isArray(data.stores) && data.stores.length > 0) {
-          setStores(data.stores);
-          setSelectedStore(data.stores[0]);
-        } else {
-          setSelectedStore(DEFAULT_STORES[0]);
+          // 出張所フラグが 1 以外の店舗を抽出
+          const filtered = data.stores.filter((s: any) => Number(s.branchFlag) !== 1);
+          setStoreList(filtered);
+          if (filtered.length > 0) {
+            setSelectedStoreName(filtered[0].storeName);
+          }
         }
       } catch (err) {
         console.error('店舗情報の取得に失敗しました', err);
-        setSelectedStore(DEFAULT_STORES[0]);
       } finally {
         setIsLoading(false);
       }
@@ -40,21 +32,23 @@ export default function LoginPage() {
   }, []);
 
   const handleLogin = () => {
-    if (!selectedStore) {
+    if (!selectedStoreName) {
       alert('店舗を選択してください。');
       return;
     }
-    // 選択された店舗名をブラウザに一時保存
-    sessionStorage.setItem('selectedStore', selectedStore);
-    // メインメニュー画面へ遷移
+    const storeObj = storeList.find((s) => s.storeName === selectedStoreName);
+    if (storeObj) {
+      // 選択した店舗の全属性をストレージへ保存
+      sessionStorage.setItem('selectedStoreObj', JSON.stringify(storeObj));
+      sessionStorage.setItem('selectedStore', storeObj.storeName);
+    }
     router.push('/menu');
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 font-sans">
       <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 border border-slate-200">
         
-        {/* タイトルロゴエリア */}
         <div className="text-center mb-8">
           <span className="inline-block bg-orange-100 text-orange-600 font-bold text-xs px-3 py-1 rounded-full mb-2">
             田中電子 業務システム
@@ -67,7 +61,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* 店舗選択フォーム */}
         <div className="space-y-6">
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">
@@ -79,26 +72,25 @@ export default function LoginPage() {
               </div>
             ) : (
               <select
-                value={selectedStore}
-                onChange={(e) => setSelectedStore(e.target.value)}
+                value={selectedStoreName}
+                onChange={(e) => setSelectedStoreName(e.target.value)}
                 className="w-full border border-slate-300 rounded-lg p-3 text-base bg-white focus:ring-2 focus:ring-blue-500 font-semibold text-slate-800"
               >
-                {stores.map((store) => (
-                  <option key={store} value={store}>
-                    {store}
+                {storeList.map((store) => (
+                  <option key={store.storeName} value={store.storeName}>
+                    {store.storeName}
                   </option>
                 ))}
               </select>
             )}
           </div>
 
-          {/* ログインボタン */}
           <button
             type="button"
             onClick={handleLogin}
-            disabled={isLoading || !selectedStore}
+            disabled={isLoading || !selectedStoreName}
             className={`w-full py-3.5 rounded-lg text-white font-bold text-lg shadow-md transition-all ${
-              isLoading || !selectedStore
+              isLoading || !selectedStoreName
                 ? 'bg-slate-300 cursor-not-allowed'
                 : 'bg-slate-800 hover:bg-slate-900 active:scale-[0.99]'
             }`}

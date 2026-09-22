@@ -3,7 +3,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
-// フォールバック用データ
 const DEFAULT_REDUCTION_MASTER = [
   { 表記名: 'auUQ_SIM単体MNP', 還元基準額: 20000, セット割対応: 'false' },
   { 表記名: '自宅セット割(ネットコース)', 還元基準額: 5000, セット割対応: 'true' },
@@ -17,19 +16,26 @@ export default function ReceiptPage() {
   const router = useRouter();
   const [mode, setMode] = useState<'即時' | '後日'>('即時');
 
-  // 店舗名（ログイン画面から自動引き継ぎ）
+  // 店舗情報
   const [storeName, setStoreName] = useState('au Style イオンモールつくば');
+  const [storeInfo, setStoreInfo] = useState<any>({});
 
   // CELF「還元内容」マスタ
   const [reductionMaster, setReductionMaster] = useState<any[]>(DEFAULT_REDUCTION_MASTER);
 
   useEffect(() => {
-    const savedStore = sessionStorage.getItem('selectedStore');
-    if (savedStore) {
-      setStoreName(savedStore);
+    const savedStoreObjStr = sessionStorage.getItem('selectedStoreObj');
+    if (savedStoreObjStr) {
+      try {
+        const obj = JSON.parse(savedStoreObjStr);
+        setStoreInfo(obj);
+        setStoreName(obj.storeName);
+      } catch (e) {}
+    } else {
+      const savedStore = sessionStorage.getItem('selectedStore');
+      if (savedStore) setStoreName(savedStore);
     }
 
-    // CELF「還元内容」マスタ取得
     async function fetchReductions() {
       try {
         const res = await fetch('/api/celf/reductions');
@@ -44,6 +50,13 @@ export default function ReceiptPage() {
     fetchReductions();
   }, []);
 
+  // 追加フォーム項目（基本情報一番上）
+  const [customerName, setCustomerName] = useState(''); // 印刷用お客様名
+  const [posDate, setPosDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0]; // デフォルト当日 yyyy-mm-dd
+  });
+
   // 基本情報
   const [remittanceMethod, setRemittanceMethod] = useState<'口座振替' | 'ATM受取'>('口座振替');
   const [staffName, setStaffName] = useState('');
@@ -51,7 +64,7 @@ export default function ReceiptPage() {
   const [counterNo, setCounterNo] = useState('1');
   const [posBillNo, setPosBillNo] = useState('');
 
-  // 還元内訳（個別の件数入力欄は削除）
+  // 還元内訳
   const [items, setItems] = useState<Array<{
     type: string;
     customType: string;
@@ -72,6 +85,9 @@ export default function ReceiptPage() {
     },
   ]);
 
+  // 備考欄（フォーム最下部）
+  const [memo, setMemo] = useState('');
+
   const [agreed, setAgreed] = useState(false);
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
@@ -79,7 +95,6 @@ export default function ReceiptPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawing = useRef(false);
 
-  // セット割対応チェック（自宅セット割など）
   const isSetDiscountSupported = (typeName: string) => {
     const master = reductionMaster.find(
       (m) => (m.表記名 || m.還元項目) === typeName
@@ -87,7 +102,7 @@ export default function ReceiptPage() {
     return master ? String(master.セット割対応) === 'true' : false;
   };
 
-  // --- 同一項目の自動集計処理（テーブル表示用） ---
+  // 一覧集計
   const aggregatedSummary = useMemo(() => {
     const map = new Map<string, { typeName: string; unitPrice: number; count: number; total: number }>();
 
@@ -112,7 +127,6 @@ export default function ReceiptPage() {
     return Array.from(map.values());
   }, [items]);
 
-  // 合計還元額
   const totalAmount = useMemo(() => {
     return aggregatedSummary.reduce((sum, item) => sum + item.total, 0);
   }, [aggregatedSummary]);
@@ -171,7 +185,6 @@ export default function ReceiptPage() {
     setSignatureData(null);
   };
 
-  // --- 内訳操作 ---
   const addItem = () => {
     const defaultMaster = reductionMaster[0] || {};
     setItems([
@@ -203,7 +216,6 @@ export default function ReceiptPage() {
       );
       if (master) {
         newItems[index].amount = String(master.還元基準額 ?? 0);
-        // セット割対応以外なら「既存」状態・セット割申番をリセット
         if (String(master.セット割対応) !== 'true') {
           newItems[index].isExisting = false;
           newItems[index].subAppNo = '';
@@ -236,9 +248,21 @@ export default function ReceiptPage() {
         };
       });
 
+      // yyyy/mm/dd 形式にフォーマット
+      const formattedPosDate = posDate ? posDate.replace(/-/g, '/') : '';
+
       const payload = {
         mode,
         storeName,
+        // CELF非表示属性の引き継ぎデータ
+        agentCode: storeInfo.agentCode || '',
+        posAbbr: storeInfo.posAbbr || '',
+        deptCode: storeInfo.deptCode || '',
+        
+        customerName, // 印刷用お名前
+        posDate: formattedPosDate, // CELF: POS登録日
+        memo, // CELF: 備考欄
+
         remittanceMethod: mode === '後日' ? remittanceMethod : '',
         staffName,
         checkerName,
@@ -312,6 +336,30 @@ export default function ReceiptPage() {
         {/* 1. 基本情報 */}
         <div className="space-y-4 mb-6">
           <h2 className="text-md font-bold text-slate-700 border-l-4 border-slate-700 pl-2 print:hidden">1. 基本情報</h2>
+          
+          {/* 追加：お客様名 & 日付欄（一番上） */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">お客様名 (印刷用お宛名)</label>
+              <input
+                type="text"
+                placeholder="例: 田中 太郎 様"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className="w-full border border-slate-300 rounded p-2 text-sm bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">日付 (POS登録日) *</label>
+              <input
+                type="date"
+                value={posDate}
+                onChange={(e) => setPosDate(e.target.value)}
+                className="w-full border border-slate-300 rounded p-2 text-sm bg-white"
+              />
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             
             {mode === '即時' ? (
@@ -418,7 +466,6 @@ export default function ReceiptPage() {
                 <div key={index} className="p-3 bg-slate-50 border rounded-lg space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
                     
-                    {/* 還元内容 */}
                     <div className="md:col-span-4">
                       <label className="block text-xs text-slate-500 mb-1">還元内容 *</label>
                       <select
@@ -442,7 +489,6 @@ export default function ReceiptPage() {
                       )}
                     </div>
 
-                    {/* 申込書番号（自宅セット割対応時のみ「既存」トグル活性化） */}
                     <div className="md:col-span-3">
                       <div className="flex justify-between items-center mb-1">
                         <label className="text-xs text-slate-500">申込書番号 *</label>
@@ -481,7 +527,6 @@ export default function ReceiptPage() {
                       )}
                     </div>
 
-                    {/* セット割申番 */}
                     <div className="md:col-span-3">
                       <label className={`block text-xs mb-1 ${setSupported ? 'text-slate-500' : 'text-slate-300'}`}>
                         セット割申番
@@ -504,7 +549,6 @@ export default function ReceiptPage() {
                       )}
                     </div>
 
-                    {/* 還元単価 */}
                     <div className="md:col-span-2">
                       <div className="flex justify-between items-center mb-1">
                         <label className="text-xs text-slate-500">還元単価 (円)</label>
@@ -532,7 +576,6 @@ export default function ReceiptPage() {
             })}
           </div>
 
-          {/* 集計後の還元内訳一覧表 (画面＆印刷用) */}
           <div className="mt-4 border border-slate-300 rounded-lg overflow-hidden">
             <table className="w-full text-sm text-left border-collapse">
               <thead>
@@ -573,6 +616,18 @@ export default function ReceiptPage() {
               </tfoot>
             </table>
           </div>
+        </div>
+
+        {/* 追加：備考欄（フォーム最下部） */}
+        <div className="mb-6">
+          <label className="block text-xs font-semibold text-slate-600 mb-1">備考欄 (任意)</label>
+          <textarea
+            rows={2}
+            placeholder="特記事項があればご記入ください"
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            className="w-full border border-slate-300 rounded p-2 text-sm bg-white"
+          />
         </div>
 
         {/* 3. 同意事項 & 電子サイン */}
