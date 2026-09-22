@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     const today = new Date();
     const receptionMonth = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/01`;
 
-    // POS登録日のフォーマット（yyyy/MM/dd に統一）
+    // POS登録日のフォーマット
     let formattedPosDate = receptionMonth;
     if (posDate) {
       formattedPosDate = String(posDate).replace(/-/g, '/');
@@ -86,11 +86,8 @@ export async function POST(request: Request) {
       }
     });
 
-    // CELF 一括追加の標準仕様（テーブル名の中に rows 配列を入れる形式）
     const payload = {
-      [tableName]: {
-        rows: records,
-      },
+      [tableName]: records,
     };
 
     const response = await fetch(CELF_API_URL, {
@@ -112,11 +109,12 @@ export async function POST(request: Request) {
     }
 
     if (!response.ok) {
+      // エラー時に実際に送信した payload 文字列を画面ダイアログにそのまま表示させる
       return NextResponse.json({
         success: false,
         httpStatus: response.status,
         celfResponse: responseData,
-        sentPayload: payload,
+        sentPayloadString: JSON.stringify(payload),
       });
     }
 
