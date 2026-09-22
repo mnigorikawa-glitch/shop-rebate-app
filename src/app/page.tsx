@@ -12,7 +12,7 @@ const DEFAULT_STORES = [
 ];
 
 export default function LoginPage() {
-  const router = Router();
+  const router = useRouter();
   const [stores, setStores] = useState<string[]>(DEFAULT_STORES);
   const [selectedStore, setSelectedStore] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -44,9 +44,9 @@ export default function LoginPage() {
       alert('店舗を選択してください。');
       return;
     }
-    // 選択された店舗名をブラウザに一時保存（他画面で参照可能にする）
+    // 選択された店舗名をブラウザに一時保存
     sessionStorage.setItem('selectedStore', selectedStore);
-    // メインメニュー画面（後ほど作成）または受領書画面へ遷移
+    // メインメニュー画面へ遷移
     router.push('/menu');
   };
 
@@ -92,7 +92,7 @@ export default function LoginPage() {
             )}
           </div>
 
-          {/* ログイン（業務開始）ボタン */}
+          {/* ログインボタン */}
           <button
             type="button"
             onClick={handleLogin}
