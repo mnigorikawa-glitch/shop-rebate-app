@@ -16,99 +16,77 @@ export async function POST(request: Request) {
       checkerName,
       counterNo,
       posBillNo,
-      totalAmount,
       items,
     } = body;
 
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
     const companyId = '340076c518';
 
-    // 対象テーブル名の決定
+    // テーブル名の設定
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
-    // CELFテーブルのカラム定義に合わせたデータ整形
+    // CELF公式一括登録エンドポイント
+    const CELF_API_URL = encodeURI(
+      `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`
+    );
+
+    // CELFテーブル構造に完全に一致するオブジェクト配列を作成
     const records = (items || []).map((item: any) => {
-      const baseRecord: any = {
-        店舗名: storeName || '',
-        代理店コード: agentCode || '',
-        略称: posAbbr || '',
-        部門コード: deptCode || '',
-        POS登録日: posDate || '',
-        備考欄: memo || '',
-        担当者名: staffName || '',
-        Wチェック者名: checkerName || '',
-        還元項目: item.type || '',
-        申込書番号: item.appNo || '',
-        セット割申番: item.subAppNo || '',
-        金額: item.amount || 0,
+      const row: any = {
+        店舗名: String(storeName || ''),
+        代理店コード: String(agentCode || ''),
+        略称: String(posAbbr || ''),
+        部門コード: String(deptCode || ''),
+        POS登録日: String(posDate || ''),
+        備考欄: String(memo || ''),
+        担当者名: String(staffName || ''),
+        Wチェック者名: String(checkerName || ''),
+        還元項目: String(item.type || ''),
+        申込書番号: String(item.appNo || ''),
+        セット割申番: String(item.subAppNo || ''),
+        金額: Number(item.amount) || 0,
       };
 
       if (mode === '即時') {
-        baseRecord['POS業務伝票番号'] = posBillNo || '';
-        baseRecord['お渡しカウンター'] = counterNo || '';
+        row['POS業務伝票番号'] = String(posBillNo || '');
+        row['お渡しカウンター'] = String(counterNo || '');
       } else {
-        baseRecord['還元方法'] = remittanceMethod || '';
+        row['還元方法'] = String(remittanceMethod || '');
       }
 
-      return baseRecord;
+      return row;
     });
 
+    // CELF API 仕様に基づいたボディ形式
     const payload = {
       [tableName]: records,
     };
 
-    // 試行するCELF登録APIのエンドポイント候補
-    const candidateUrls = [
-      encodeURI(`https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`),
-      encodeURI(`https://api.cloud.celf.jp/v1/tables/${tableName}/record?company=${companyId}`),
-      encodeURI(`https://api.cloud.celf.jp/v1/tables/${tableName}/records?company=${companyId}`),
-    ];
+    const response = await fetch(CELF_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CELF-API-KEY': CELF_API_KEY,
+      },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
 
-    let lastResponseText = '';
-    let lastStatus = 400;
-    let isSuccess = false;
-    let responseData: any = null;
-
-    // サポートされているエンドポイントへ順次リクエストを試行
-    for (const url of candidateUrls) {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CELF-API-KEY': CELF_API_KEY,
-        },
-        body: JSON.stringify(payload),
-        cache: 'no-store',
-      });
-
-      lastStatus = response.status;
-      lastResponseText = await response.text();
-
-      try {
-        responseData = JSON.parse(lastResponseText);
-      } catch (e) {
-        responseData = { rawText: lastResponseText };
-      }
-
-      if (response.ok) {
-        isSuccess = true;
-        break;
-      }
-
-      // 405 Method Not Allowed の場合は別のエンドポイントURLで再試行
-      if (response.status !== 405) {
-        break;
-      }
+    const responseText = await response.text();
+    let responseData: any = {};
+    try {
+      responseData = JSON.parse(responseText);
+    } catch (e) {
+      responseData = { rawText: responseText };
     }
 
-    if (!isSuccess) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `CELF API Status ${lastStatus}: ${JSON.stringify(responseData)}`,
-        },
-        { status: 400 }
-      );
+    if (!response.ok) {
+      return NextResponse.json({
+        success: false,
+        httpStatus: response.status,
+        celfResponse: responseData,
+        sentPayload: payload, // デバッグ用：送信した内容を返す
+      });
     }
 
     return NextResponse.json({
@@ -116,9 +94,9 @@ export async function POST(request: Request) {
       data: responseData,
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      success: false,
+      error: error.message,
+    });
   }
 }
