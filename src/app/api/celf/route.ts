@@ -22,57 +22,58 @@ export async function POST(request: Request) {
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
     const companyId = '340076c518';
 
-    // テーブル名の決定
+    // テーブル名
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
-    // CELF登録APIのエンドポイント
     const CELF_API_URL = encodeURI(
       `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`
     );
 
-    // 送信データのクレンジング（null/undefined排除、データ型の厳密指定）
+    // CELFのデータ型仕様に完全適合させたオブジェクト配列
     const records = (items || []).map((item: any) => {
-      // 金額の数値化（カンマ除去）
-      const cleanAmount = typeof item.amount === 'number' 
+      // 数値型
+      const amountNum = typeof item.amount === 'number' 
         ? item.amount 
-        : Number(String(item.amount || '0').replace(/,/g, '')) || 0;
+        : Number(String(item.amount || '0').replace(/[^0-9.-]/g, '')) || 0;
 
-      const row: Record<string, any> = {
-        '店舗名': String(storeName || ''),
-        '代理店コード': String(agentCode || ''),
-        '略称': String(posAbbr || ''),
-        '部門コード': String(deptCode || ''),
-        'POS登録日': String(posDate || ''),
-        '備考欄': String(memo || ''),
-        '担当者名': String(staffName || ''),
-        'Wチェック者名': String(checkerName || ''),
-        '還元項目': String(item.type || ''),
-        '申込書番号': String(item.appNo || ''),
-        'セット割申番': String(item.subAppNo || ''),
-        '金額': cleanAmount,
+      const record: Record<string, any> = {
+        '店舗名': storeName ? String(storeName) : '',
+        '代理店コード': agentCode ? String(agentCode) : '',
+        '略称': posAbbr ? String(posAbbr) : '',
+        '部門コード': deptCode ? String(deptCode) : '',
+        'POS登録日': posDate ? String(posDate) : '',
+        '備考欄': memo ? String(memo) : '',
+        '担当者名': staffName ? String(staffName) : '',
+        'Wチェック者名': checkerName ? String(checkerName) : '',
+        '還元項目': item.type ? String(item.type) : '',
+        '申込書番号': item.appNo ? String(item.appNo) : '',
+        'セット割申番': item.subAppNo ? String(item.subAppNo) : '',
+        '金額': amountNum,
       };
 
       if (mode === '即時') {
-        row['POS業務伝票番号'] = String(posBillNo || '');
-        row['お渡しカウンター'] = String(counterNo || '');
+        record['POS業務伝票番号'] = posBillNo ? String(posBillNo) : '';
+        record['お渡しカウンター'] = counterNo ? String(counterNo) : '';
       } else {
-        row['還元方法'] = String(remittanceMethod || '');
+        record['還元方法'] = remittanceMethod ? String(remittanceMethod) : '';
       }
 
-      return row;
+      return record;
     });
 
     const payload = {
       [tableName]: records,
     };
 
+    const jsonString = JSON.stringify(payload);
+
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Type': 'application/json',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
-      body: JSON.stringify(payload),
+      body: jsonString,
       cache: 'no-store',
     });
 
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
         success: false,
         httpStatus: response.status,
         celfResponse: responseData,
-        sentPayload: payload,
+        sentJson: payload, // 送信データ診断用
       });
     }
 
