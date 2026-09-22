@@ -25,16 +25,16 @@ export async function POST(request: Request) {
     // 対象テーブル名
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
-    // CELFのデータ追加登録用エンドポイント (/record)
+    // CELFの正式なデータ登録・更新用エンドポイント (POST対応)
     const CELF_API_URL = encodeURI(
-      `https://api.cloud.celf.jp/v1/tables/${tableName}/record?company=${companyId}`
+      `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`
     );
 
     // 受付月（当月1日 yyyy-MM-dd 形式）
     const today = new Date();
     const receptionMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
 
-    // POS登録日のフォーマット（yyyy-MM-dd ハイフン区切りに厳密変換）
+    // POS登録日のフォーマット（yyyy-MM-dd）
     let formattedPosDate = receptionMonth;
     if (posDate) {
       formattedPosDate = String(posDate).replace(/\//g, '-');
