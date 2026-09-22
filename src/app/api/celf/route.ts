@@ -23,15 +23,10 @@ export async function POST(request: Request) {
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
     const companyId = '340076c518';
 
-    // テーブル名の決定
+    // 対象テーブル名の決定
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
-    
-    // CELF レコード登録(作成)用エンドポイント URL
-    const CELF_API_URL = encodeURI(
-      `https://api.cloud.celf.jp/v1/tables/${tableName}/record?company=${companyId}`
-    );
 
-    // CELFテーブルのカラム定義に合致するデータのみを抽出・整形
+    // CELFテーブルのカラム定義に合わせたデータ整形
     const records = (items || []).map((item: any) => {
       const baseRecord: any = {
         店舗名: storeName || '',
@@ -58,34 +53,59 @@ export async function POST(request: Request) {
       return baseRecord;
     });
 
-    // CELF登録APIのリクエストペイロード構築
     const payload = {
       [tableName]: records,
     };
 
-    const response = await fetch(CELF_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CELF-API-KEY': CELF_API_KEY,
-      },
-      body: JSON.stringify(payload),
-      cache: 'no-store',
-    });
+    // 試行するCELF登録APIのエンドポイント候補
+    const candidateUrls = [
+      encodeURI(`https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`),
+      encodeURI(`https://api.cloud.celf.jp/v1/tables/${tableName}/record?company=${companyId}`),
+      encodeURI(`https://api.cloud.celf.jp/v1/tables/${tableName}/records?company=${companyId}`),
+    ];
 
-    const responseText = await response.text();
-    let data: any = {};
-    try {
-      data = JSON.parse(responseText);
-    } catch (e) {
-      data = { rawText: responseText };
+    let lastResponseText = '';
+    let lastStatus = 400;
+    let isSuccess = false;
+    let responseData: any = null;
+
+    // サポートされているエンドポイントへ順次リクエストを試行
+    for (const url of candidateUrls) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CELF-API-KEY': CELF_API_KEY,
+        },
+        body: JSON.stringify(payload),
+        cache: 'no-store',
+      });
+
+      lastStatus = response.status;
+      lastResponseText = await response.text();
+
+      try {
+        responseData = JSON.parse(lastResponseText);
+      } catch (e) {
+        responseData = { rawText: lastResponseText };
+      }
+
+      if (response.ok) {
+        isSuccess = true;
+        break;
+      }
+
+      // 405 Method Not Allowed の場合は別のエンドポイントURLで再試行
+      if (response.status !== 405) {
+        break;
+      }
     }
 
-    if (!response.ok) {
+    if (!isSuccess) {
       return NextResponse.json(
         {
           success: false,
-          error: `CELF API Status ${response.status}: ${JSON.stringify(data)}`,
+          error: `CELF API Status ${lastStatus}: ${JSON.stringify(responseData)}`,
         },
         { status: 400 }
       );
@@ -93,7 +113,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      data,
+      data: responseData,
     });
   } catch (error: any) {
     return NextResponse.json(
