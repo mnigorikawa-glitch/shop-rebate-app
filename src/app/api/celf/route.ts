@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
     const companyId = '340076c518';
 
-    // テーブル名
+    // 対象テーブル名
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
     const CELF_API_URL = encodeURI(
@@ -60,14 +60,10 @@ export async function POST(request: Request) {
       return record;
     });
 
-    // CELF公式仕様：「テーブル名」の下に「rows」配列を配置する構造
+    // CELF一括登録仕様（テーブル名の中に配列を直置き）
     const payload = {
-      [tableName]: {
-        rows: records,
-      },
+      [tableName]: records,
     };
-
-    const jsonString = JSON.stringify(payload);
 
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
@@ -75,7 +71,7 @@ export async function POST(request: Request) {
         'Content-Type': 'application/json; charset=utf-8',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
-      body: jsonString,
+      body: JSON.stringify(payload),
       cache: 'no-store',
     });
 

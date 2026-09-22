@@ -51,10 +51,10 @@ export default function ReceiptPage() {
   }, []);
 
   // 追加フォーム項目（基本情報一番上）
-  const [customerName, setCustomerName] = useState(''); // 印刷用お客様名
+  const [customerName, setCustomerName] = useState('');
   const [posDate, setPosDate] = useState(() => {
     const today = new Date();
-    return today.toISOString().split('T')[0]; // デフォルト当日 yyyy-mm-dd
+    return today.toISOString().split('T')[0];
   });
 
   // 基本情報
@@ -266,7 +266,6 @@ export default function ReceiptPage() {
         posBillNo: mode === '即時' ? posBillNo : '',
         totalAmount,
         items: formattedItems,
-        summary: aggregatedSummary,
       };
 
       const res = await fetch('/api/celf', {
@@ -338,7 +337,7 @@ export default function ReceiptPage() {
         <div className="space-y-4 mb-6">
           <h2 className="text-md font-bold text-slate-700 border-l-4 border-slate-700 pl-2 print:hidden">1. 基本情報</h2>
           
-          {/* お客様名 & 日付欄（一番上） */}
+          {/* お客様名 & 日付欄 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">お客様名 (印刷用お宛名)</label>

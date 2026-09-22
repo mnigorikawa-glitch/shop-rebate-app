@@ -38,7 +38,6 @@ export default function LoginPage() {
     }
     const storeObj = storeList.find((s) => s.storeName === selectedStoreName);
     if (storeObj) {
-      // 選択した店舗の全属性をストレージへ保存
       sessionStorage.setItem('selectedStoreObj', JSON.stringify(storeObj));
       sessionStorage.setItem('selectedStore', storeObj.storeName);
     }
