@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     const limit = 1000;
     
     // ソート対象カラムの指定（まずは POS登録日 の降順。エラーが出る場合は '-ID' に変更してみてください）
-    const sortColumn = '-POS登録日';
+    const sortColumn = '-ID';
 
     // CELF API URLの構築（sortパラメータを安全にURLエンコード）
     const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}&limit=${limit}&sort=${encodeURIComponent(sortColumn)}`;
