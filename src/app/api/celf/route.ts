@@ -17,6 +17,10 @@ export async function POST(request: Request) {
       counterNo,
       posBillNo,
       items,
+      // ▼ 追加：後日キャッシュバック用パラメータの受け取り
+      transferNoYymm,
+      transferNoSeq,
+      transferNo,
     } = body;
 
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
@@ -68,6 +72,12 @@ export async function POST(request: Request) {
         };
       } else {
         return {
+          // ▼ 追加：振込No関連項目のマッピング
+          '振込No年月': String(transferNoYymm || ''),
+          '振込No通番': typeof transferNoSeq === 'number' ? transferNoSeq : Number(transferNoSeq || 0),
+          '振込No': String(transferNo || ''),
+          '振込合計金額': typeof item.totalTransferAmount === 'number' ? item.totalTransferAmount : Number(item.totalTransferAmount || 0),
+          
           '店舗名': String(storeName || ''),
           '代理店コード': String(agentCode || ''),
           '略称': String(posAbbr || ''),
