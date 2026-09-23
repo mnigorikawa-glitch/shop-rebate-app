@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     const limit = 3000;
     const sort = '-ID'; // もし「POS登録日」でエラーになる場合は「-id」などに変更してください
 
-    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}&limit=${limit}&sort=${sort};
+    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}&limit=${limit}&sort=${sort}';
     const CELF_API_URL = encodeURI(rawUrl);
 
     console.log('[CELF GET Request URL]:', CELF_API_URL);
