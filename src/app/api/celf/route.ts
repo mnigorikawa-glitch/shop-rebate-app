@@ -7,6 +7,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const targetStoreName = searchParams.get('storeName') || '';
+    const targetDeptCode = searchParams.get('deptCode') || '';
     const targetYymm = searchParams.get('transferNoYymm') || '';
 
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
@@ -14,12 +15,12 @@ export async function GET(request: Request) {
     const tableName = '後日cbデータtest';
 
     // CELF APIエンドポイントの構築
-    // CELFの検索仕様に合わせて query 条件を追加（指定がある場合）
     let rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`;
-    
-    // CELF検索条件の組み立て（例: 店舗名='auStyle北習志野' AND 振込No年月='2609'）
+
+    // CELF検索条件の組み立て（例: 店舗名='auStyle北習志野' AND 部門コード='12345' AND 振込No年月='2609-'）
     const conditions: string[] = [];
     if (targetStoreName) conditions.push(`店舗名='${targetStoreName}'`);
+    if (targetDeptCode) conditions.push(`部門コード='${targetDeptCode}'`);
     if (targetYymm) conditions.push(`振込No年月='${targetYymm}'`);
 
     if (conditions.length > 0) {
@@ -79,6 +80,13 @@ export async function GET(request: Request) {
       });
     }
 
+    if (targetDeptCode) {
+      filteredRecords = filteredRecords.filter((row: any) => {
+        const dept = String(row['部門コード'] || row.部門コード || row.deptCode || '').trim();
+        return dept === targetDeptCode.trim();
+      });
+    }
+
     if (targetYymm) {
       filteredRecords = filteredRecords.filter((row: any) => {
         const yymm = String(row['振込No年月'] || row.振込No年月 || row.transferNoYymm || '').trim();
@@ -86,8 +94,9 @@ export async function GET(request: Request) {
       });
     }
 
-    // サーバーログで絞り込み結果を確認（Vercel等のログで確認可能）
-    console.log(`[CELF GET] 受け取ったパラメータ: storeName="${targetStoreName}", transferNoYymm="${targetYymm}"`);
+    console.log(
+      `[CELF GET] 受け取ったパラメータ: storeName="${targetStoreName}", deptCode="${targetDeptCode}", transferNoYymm="${targetYymm}"`
+    );
     console.log(`[CELF GET] 取得全件数: ${records.length} 件 / 絞り込み後: ${filteredRecords.length} 件`);
 
     return NextResponse.json(filteredRecords);
@@ -108,6 +117,7 @@ export async function POST(request: Request) {
       agentCode,
       posAbbr,
       deptCode,
+      customerName,
       posDate,
       memo,
       remittanceMethod,
@@ -148,6 +158,7 @@ export async function POST(request: Request) {
           '略称': String(posAbbr || ''),
           '受付月': receptionMonth,
           '部門コード': String(deptCode || ''),
+          'お客様名': String(customerName || ''),
           'POS登録日': formattedPosDate,
           '申込書番号': String(item.appNo || ''),
           '還元内容': String(item.type || ''),
@@ -176,6 +187,7 @@ export async function POST(request: Request) {
           '略称': String(posAbbr || ''),
           '受付月': receptionMonth,
           '部門コード': String(deptCode || ''),
+          'お客様名': String(customerName || ''),
           'POS登録日': formattedPosDate,
           '申込書番号': String(item.appNo || ''),
           '還元内容': String(item.type || ''),
