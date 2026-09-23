@@ -18,9 +18,9 @@ export async function GET(request: Request) {
     // limit: 一度に取得する件数（タイムアウトを防ぎつつ十分な件数を確保するため 10000 に設定）
     // sort: 最新データを上に持ってくるために降順ソート（例: -POS登録日 や -id など）
     const limit = 3000;
-    const sort = '-id'; // もし「POS登録日」でエラーになる場合は「-id」などに変更してください
+    const sort = '-ID'; // もし「POS登録日」でエラーになる場合は「-id」などに変更してください
 
-    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}&limit=${limit}&sort=${encodeURIComponent(sort)}`;
+    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}&limit=${limit}&sort=${sort};
     const CELF_API_URL = encodeURI(rawUrl);
 
     console.log('[CELF GET Request URL]:', CELF_API_URL);
