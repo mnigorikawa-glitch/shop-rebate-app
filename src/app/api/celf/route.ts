@@ -1,24 +1,28 @@
 import { NextResponse } from 'next/server';
 
 // ----------------------------------------------------
-// GET: 最新の「振込No通番」を取得する処理
+// GET: 最新の「振込No通番」を取得する処理（CELF APIの検索仕様に準拠）
 // ----------------------------------------------------
 export async function GET(request: Request) {
   try {
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
-    const companyId = '340076c518';
+    const appId = '340076c518'; // アプリID/環境識別子
     const tableName = '後日cbデータtest';
 
-    // CELFデータ全件取得・検索用エンドポイント (/records)
+    // CELF公式WebAPIのテーブルデータ検索エンドポイント
     const CELF_API_URL = encodeURI(
-      `https://cloud.celf.jp/api/57v1/tables/${tableName}/records?company=${companyId}`
+      `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}?app=${appId}`
     );
 
+    // CELFのデータ取得APIは POST メソッドでリクエストボディを送る仕様
     const response = await fetch(CELF_API_URL, {
-      method: 'GET',
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/json; charset=utf-8',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
+      // 検索条件なし（全件取得）の場合は空オブジェクトを送信
+      body: JSON.stringify({}),
       cache: 'no-store',
     });
 
@@ -31,10 +35,11 @@ export async function GET(request: Request) {
     }
 
     const data = await response.json();
-    // CELFの返却データ形式（配列直接、または data.records / data[tableName]）にフレキシブルに対応
+
+    // CELFから返却されるレコード配列の取得
     const records = Array.isArray(data)
       ? data
-      : data.records || data[tableName] || [];
+      : data.records || data[tableName] || data.data || [];
 
     return NextResponse.json(records);
   } catch (error: any) {
@@ -67,12 +72,13 @@ export async function POST(request: Request) {
     } = body;
 
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
-    const companyId = '340076c518';
+    const appId = '340076c518';
 
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
+    // 一括挿入用エンドポイント
     const CELF_API_URL = encodeURI(
-      `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}/bulkinsert?company=${companyId}`
+      `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}/bulkinsert?app=${appId}`
     );
 
     const today = new Date();
@@ -109,7 +115,6 @@ export async function POST(request: Request) {
           'リスト入力者': String(staffName || ''),
         };
       } else {
-        // 振込合計金額: 1行目のみ数値、2行目以降は空文字 ''
         const totalAmountVal = (index === 0 && item.totalTransferAmount !== undefined)
           ? (typeof item.totalTransferAmount === 'number' ? item.totalTransferAmount : Number(item.totalTransferAmount || 0))
           : '';
