@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     // CELFへのリクエストパラメータ
     // limit: 直近の必要十分な件数（例: 500件〜1000件）
     // sort: 最新データを上に持ってくるために降順指定（ハイフン '-' を付与）
-    const limit = 1000;
+    const limit = 2000;
     
     // ソート対象カラムの指定（まずは POS登録日 の降順。エラーが出る場合は '-ID' に変更してみてください）
     const sortColumn = '-ID';
