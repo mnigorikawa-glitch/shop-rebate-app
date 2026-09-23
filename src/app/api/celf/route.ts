@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 // ----------------------------------------------------
 // GET: 最新の「振込No通番」を取得する処理
+// （採番に必要な店舗名・部門コード・振込No年月のみ使用）
 // ----------------------------------------------------
 export async function GET(request: Request) {
   try {
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
     // CELF APIエンドポイントの構築
     let rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`;
 
-    // CELF検索条件の組み立て（例: 店舗名='auStyle北習志野' AND 部門コード='12345' AND 振込No年月='2609-'）
+    // 採番用の検索条件を組み立て
     const conditions: string[] = [];
     if (targetStoreName) conditions.push(`店舗名='${targetStoreName}'`);
     if (targetDeptCode) conditions.push(`部門コード='${targetDeptCode}'`);
@@ -68,9 +69,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // ----------------------------------------------------
-    // Node.js側でのフォールバック絞り込み（表記揺れ対策）
-    // ----------------------------------------------------
+    // Node.js側での安全なフィルタリング
     let filteredRecords = records;
 
     if (targetStoreName) {
@@ -94,11 +93,6 @@ export async function GET(request: Request) {
       });
     }
 
-    console.log(
-      `[CELF GET] 受け取ったパラメータ: storeName="${targetStoreName}", deptCode="${targetDeptCode}", transferNoYymm="${targetYymm}"`
-    );
-    console.log(`[CELF GET] 取得全件数: ${records.length} 件 / 絞り込み後: ${filteredRecords.length} 件`);
-
     return NextResponse.json(filteredRecords);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -107,6 +101,7 @@ export async function GET(request: Request) {
 
 // ----------------------------------------------------
 // POST: CELFへの一括登録処理
+// （ここで customerName を取得してCELFテーブルへ書き込み）
 // ----------------------------------------------------
 export async function POST(request: Request) {
   try {
@@ -117,7 +112,7 @@ export async function POST(request: Request) {
       agentCode,
       posAbbr,
       deptCode,
-      customerName,
+      customerName, // CELF登録用のパラメータ
       posDate,
       memo,
       remittanceMethod,
