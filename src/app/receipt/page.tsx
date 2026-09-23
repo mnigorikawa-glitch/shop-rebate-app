@@ -112,14 +112,26 @@ const fetchLatestTransferNo = async () => {
   setYymm(prefix);
 
   try {
-    const res = await fetch(`/api/celf`);
+    // storeName に加え deptCode もクエリに含める
+    const deptCode = storeInfo.deptCode || '';
+    const params = new URLSearchParams({
+      storeName: storeName,
+      deptCode: deptCode,
+      transferNoYymm: prefix,
+    });
+
+    const res = await fetch(`/api/celf?${params.toString()}`);
     if (res.ok) {
       const data = await res.json();
       let maxSeq = 0;
       const records = Array.isArray(data) ? data : (data.records || []);
 
       records.forEach((item: any) => {
-        if (item['振込No通番'] !== undefined && item['振込No通番'] !== null) {
+        // 部門コード（deptCode）が一致するレコードに絞り込んで最大の通番を検索
+        const recordDept = item['部門コード'] || item.deptCode;
+        const matchesDept = !deptCode || recordDept === deptCode;
+
+        if (matchesDept && item['振込No通番'] !== undefined && item['振込No通番'] !== null) {
           const seq = Number(item['振込No通番']);
           if (!isNaN(seq) && seq > maxSeq) {
             maxSeq = seq;
@@ -309,14 +321,24 @@ const handleSubmit = async () => {
 
 // 送信直前の最新通番二重チェック部分（handleSubmit内）
 if (mode === '後日') {
-  const checkRes = await fetch(`/api/celf`);
+  const deptCode = storeInfo.deptCode || '';
+  const params = new URLSearchParams({
+    storeName: storeName,
+    deptCode: deptCode,
+    transferNoYymm: yymm,
+  });
+
+  const checkRes = await fetch(`/api/celf?${params.toString()}`);
   if (checkRes.ok) {
     const checkData = await checkRes.json();
     let maxSeq = 0;
     const records = Array.isArray(checkData) ? checkData : (checkData.records || []);
 
     records.forEach((item: any) => {
-      if (item['振込No通番'] !== undefined && item['振込No通番'] !== null) {
+      const recordDept = item['部門コード'] || item.deptCode;
+      const matchesDept = !deptCode || recordDept === deptCode;
+
+      if (matchesDept && item['振込No通番'] !== undefined && item['振込No通番'] !== null) {
         const seq = Number(item['振込No通番']);
         if (!isNaN(seq) && seq > maxSeq) {
           maxSeq = seq;
