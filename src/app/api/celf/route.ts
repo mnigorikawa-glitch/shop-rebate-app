@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 // ----------------------------------------------------
-// GET: 最新の「振込No通番」を取得する処理
+// GET: 最新の「振込No通番」を取得する処理（CELFでの降順ソート適用版）
 // ----------------------------------------------------
 export async function GET(request: Request) {
   try {
@@ -14,12 +14,19 @@ export async function GET(request: Request) {
     const targetDeptCode = searchParams.get('deptCode') || '';
     const targetYymm = searchParams.get('transferNoYymm') || '';
 
-    // CELFへのリクエスト（limitのみ指定してソートパラメータによるエラーを回避）
-    const limit = 5000;
-    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}&limit=${limit}`;
+    // CELFへのリクエストパラメータ
+    // limit: 直近の必要十分な件数（例: 500件〜1000件）
+    // sort: 最新データを上に持ってくるために降順指定（ハイフン '-' を付与）
+    const limit = 1000;
+    
+    // ソート対象カラムの指定（まずは POS登録日 の降順。エラーが出る場合は '-ID' に変更してみてください）
+    const sortColumn = '-POS登録日';
+
+    // CELF API URLの構築（sortパラメータを安全にURLエンコード）
+    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}&limit=${limit}&sort=${encodeURIComponent(sortColumn)}`;
     const CELF_API_URL = encodeURI(rawUrl);
 
-    console.log('[CELF GET Request URL]:', CELF_API_URL);
+    console.log('[CELF GET Request URL with Sort]:', CELF_API_URL);
 
     const response = await fetch(CELF_API_URL, {
       method: 'GET',
@@ -64,7 +71,7 @@ export async function GET(request: Request) {
       }
     }
 
-    console.log(`[CELF Fetch Success] CELFから取得した総件数: ${records.length}件`);
+    console.log(`[CELF Fetch Success] CELFから取得した件数: ${records.length}件`);
 
     // 条件による絞り込み（店舗名・部門コード・振込No年月）
     let filteredRecords = records;
@@ -89,13 +96,6 @@ export async function GET(request: Request) {
         return yymm === targetYymm.trim();
       });
     }
-
-    // Node.js側でPOS登録日（または登録日時・ID）の降順（新しい順）に並べ替え
-    filteredRecords.sort((a: any, b: any) => {
-      const dateA = new Date(a['POS登録日'] || a.POS登録日 || a.posDate || 0).getTime();
-      const dateB = new Date(b['POS登録日'] || b.POS登録日 || b.posDate || 0).getTime();
-      return dateB - dateA;
-    });
 
     console.log(`[Filtered Success] 絞り込み後件数: ${filteredRecords.length}件`);
 
