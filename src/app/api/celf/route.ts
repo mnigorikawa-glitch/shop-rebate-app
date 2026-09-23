@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 // ----------------------------------------------------
-// GET: 最新の「振込No通番」を取得する処理
+// GET: 最新の「振込No通番」を取得する処理（CELF側の仕様に合わせてPOST検索を使用）
 // ----------------------------------------------------
 export async function GET(request: Request) {
   try {
@@ -14,22 +14,27 @@ export async function GET(request: Request) {
     const targetDeptCode = searchParams.get('deptCode') || '';
     const targetYymm = searchParams.get('transferNoYymm') || '';
 
-    // リクエストパラメータの組み立て
-    // limit: 一度に取得する件数（タイムアウトを防ぎつつ十分な件数を確保するため 10000 に設定）
-    // sort: 最新データを上に持ってくるために降順ソート（例: -POS登録日 や -id など）
-    const limit = 3000;
-    const sort = '-ID'; // もし「POS登録日」でエラーになる場合は「-id」などに変更してください
-
-    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}&limit=${limit}&sort=${sort}';
+    // CELFの検索用エンドポイント（/query）
+    const rawUrl = `url?id=16v1/tables/${tableName}/query?company=${companyId}`;
     const CELF_API_URL = encodeURI(rawUrl);
 
-    console.log('[CELF GET Request URL]:', CELF_API_URL);
+    console.log('[CELF POST Query Request URL]:', CELF_API_URL);
+
+    // POSTで送信する検索オプション（リクエストボディ）
+    // limit: 取得件数上限（必要に応じて調整）
+    // sort: 降順指定（「-」をつけて最新順にする。例: "-POS登録日" や "-id"）
+    const requestBody = {
+      limit: 10000,
+      sort: '-POS登録日', // エラーになる場合は '-id' や '-登録日時' 等に変更してください
+    };
 
     const response = await fetch(CELF_API_URL, {
-      method: 'GET',
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
+      body: JSON.stringify(requestBody),
       cache: 'no-store',
     });
 
@@ -42,7 +47,7 @@ export async function GET(request: Request) {
     }
 
     if (!response.ok) {
-      console.error(`[CELF GET ERROR] Status: ${response.status}`, responseText);
+      console.error(`[CELF POST ERROR] Status: ${response.status}`, responseText);
       return NextResponse.json(
         {
           error: `CELFテーブル [${tableName}] へのアクセスでエラーが発生しました。`,
@@ -70,7 +75,7 @@ export async function GET(request: Request) {
 
     console.log(`[CELF Fetch Success] CELFから取得した件数: ${records.length}件`);
 
-    // 条件による絞り込み（店舗名・部門コード・振込No年月）
+    // Node.js側での安全な絞り込み（店舗名・部門コード・振込No年月）
     let filteredRecords = records;
 
     if (targetStoreName) {
@@ -98,7 +103,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(filteredRecords);
   } catch (error: any) {
-    console.error('[CELF GET Internal Error]:', error);
+    console.error('[CELF POST Internal Error]:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
