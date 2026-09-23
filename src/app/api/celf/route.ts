@@ -5,6 +5,10 @@ import { NextResponse } from 'next/server';
 // ----------------------------------------------------
 export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const targetStoreName = searchParams.get('storeName') || '';
+    const targetYymm = searchParams.get('transferNoYymm') || '';
+
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
     const companyId = '340076c518'; // アプリID / 企業識別子
     const tableName = '後日cbデータtest';
@@ -51,7 +55,28 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json(records);
+    // ----------------------------------------------------
+    // レコードの絞り込み（店舗名・振込No年月）
+    // ----------------------------------------------------
+    let filteredRecords = records;
+
+    // 店舗名が指定されている場合は絞り込み
+    if (targetStoreName) {
+      filteredRecords = filteredRecords.filter((row: any) => {
+        const store = row.店舗名 || row.storeName || '';
+        return store === targetStoreName;
+      });
+    }
+
+    // 振込No年月（例: '2609'）が指定されている場合は絞り込み
+    if (targetYymm) {
+      filteredRecords = filteredRecords.filter((row: any) => {
+        const yymm = String(row.振込No年月 || row.transferNoYymm || '');
+        return yymm === targetYymm;
+      });
+    }
+
+    return NextResponse.json(filteredRecords);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
