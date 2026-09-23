@@ -1,5 +1,44 @@
 import { NextResponse } from 'next/server';
 
+// ----------------------------------------------------
+// GET: 最新の「振込No通番」を取得する処理
+// ----------------------------------------------------
+export async function GET(request: Request) {
+  try {
+    const CELF_API_KEY = process.env.CELF_API_KEY || '';
+    const companyId = '340076c518';
+    const tableName = '後日cbデータtest';
+
+    // CELF検索用エンドポイント
+    const CELF_API_URL = encodeURI(
+      `https://api.cloud.celf.jp/v1/tables/${tableName}/records?company=${companyId}`
+    );
+
+    const response = await fetch(CELF_API_URL, {
+      method: 'GET',
+      headers: {
+        'X-CELF-API-KEY': CELF_API_KEY,
+      },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      return NextResponse.json([], { status: response.status });
+    }
+
+    const data = await response.json();
+    // CELFの検索結果データ構造（data.records または data 配列）に対応
+    const records = Array.isArray(data) ? data : data.records || [];
+
+    return NextResponse.json(records);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// ----------------------------------------------------
+// POST: CELFへの一括登録処理
+// ----------------------------------------------------
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -17,7 +56,6 @@ export async function POST(request: Request) {
       counterNo,
       posBillNo,
       items,
-      // ▼ 後日キャッシュバック用パラメータの受け取り
       transferNoYymm,
       transferNoSeq,
     } = body;
@@ -25,26 +63,21 @@ export async function POST(request: Request) {
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
     const companyId = '340076c518';
 
-    // 対象テーブル名
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
-    // CELF一括登録用エンドポイント（/bulkinsert）
     const CELF_API_URL = encodeURI(
       `https://api.cloud.celf.jp/v1/tables/${tableName}/bulkinsert?company=${companyId}`
     );
 
-    // 受付月（当月1日 yyyy-MM-dd 形式）
     const today = new Date();
     const receptionMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
 
-    // POS登録日のフォーマット（yyyy-MM-dd）
     let formattedPosDate = receptionMonth;
     if (posDate) {
       formattedPosDate = String(posDate).replace(/\//g, '-');
     }
 
-    // CELFテーブル構造（即時 / 後日）に完全一致させたレコード配列生成
-    const records = (items || []).map((item: any) => {
+    const records = (items || []).map((item: any, index: number) => {
       const amountNum = typeof item.amount === 'number' 
         ? item.amount 
         : Number(String(item.amount || '0').replace(/[^0-9.-]/g, '')) || 0;
@@ -70,11 +103,15 @@ export async function POST(request: Request) {
           'リスト入力者': String(staffName || ''),
         };
       } else {
+        // 振込合計金額: 1行目のみ数値（totalTransferAmount）、2行目以降は空文字 ''
+        const totalAmountVal = (index === 0 && item.totalTransferAmount !== undefined)
+          ? (typeof item.totalTransferAmount === 'number' ? item.totalTransferAmount : Number(item.totalTransferAmount || 0))
+          : '';
+
         return {
-          // ▼ 実際にCELFテーブル存在する列のみをセット
           '振込No年月': String(transferNoYymm || ''),
           '振込No通番': typeof transferNoSeq === 'number' ? transferNoSeq : Number(transferNoSeq || 0),
-          '振込合計金額': typeof item.totalTransferAmount === 'number' ? item.totalTransferAmount : Number(item.totalTransferAmount || 0),
+          '振込合計金額': totalAmountVal,
           
           '店舗名': String(storeName || ''),
           '代理店コード': String(agentCode || ''),

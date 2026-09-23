@@ -103,41 +103,43 @@ export default function ReceiptPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawing = useRef(false);
 
-  // --- 後日キャッシュバックの振込No取得 (CELF GET) ---
-  const fetchLatestTransferNo = async () => {
-    const now = new Date();
-    const yy = String(now.getFullYear()).slice(-2);
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const prefix = `${yy}${mm}-`; // "2609-"
-    setYymm(prefix);
+// --- 後日キャッシュバックの振込No取得 (CELF GET) ---
+const fetchLatestTransferNo = async () => {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const prefix = `${yy}${mm}-`; // "2609-"
+  setYymm(prefix);
 
-    try {
-      const codeParam = storeInfo.agentCode || storeInfo.deptCode || '';
-      const res = await fetch(`/api/celf?agencyCode=${codeParam}`);
-      if (res.ok) {
-        const data = await res.json();
-        let maxSeq = 0;
-        if (Array.isArray(data)) {
-          data.forEach((item: any) => {
-            if (item.振込No通番 && typeof item.振込No通番 === 'number') {
-              if (item.振込No通番 > maxSeq) maxSeq = item.振込No通番;
-            }
-          });
+  try {
+    const res = await fetch(`/api/celf`);
+    if (res.ok) {
+      const data = await res.json();
+      let maxSeq = 0;
+      const records = Array.isArray(data) ? data : (data.records || []);
+
+      records.forEach((item: any) => {
+        if (item['振込No通番'] !== undefined && item['振込No通番'] !== null) {
+          const seq = Number(item['振込No通番']);
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
+          }
         }
-        const nextSeq = maxSeq + 1;
-        setSequenceNo(nextSeq);
-        setDisplayTransferNo(`${prefix}${nextSeq}`);
-      } else {
-        setSequenceNo(1);
-        setDisplayTransferNo(`${prefix}1`);
-      }
-    } catch (err) {
-      console.error('振込No取得エラー:', err);
+      });
+
+      const nextSeq = maxSeq + 1;
+      setSequenceNo(nextSeq);
+      setDisplayTransferNo(`${prefix}${nextSeq}`);
+    } else {
       setSequenceNo(1);
       setDisplayTransferNo(`${prefix}1`);
     }
-  };
-
+  } catch (err) {
+    console.error('振込No取得エラー:', err);
+    setSequenceNo(1);
+    setDisplayTransferNo(`${prefix}1`);
+  }
+};
   // モードおよび還元方法変更時の連動制御
   useEffect(() => {
     setAgreed(false);
@@ -305,27 +307,29 @@ const handleSubmit = async () => {
     let finalSeq = sequenceNo;
     let finalTransferNoStr = displayTransferNo;
 
-    // 後日キャッシュバック時は送信直前に最新通番を二重チェック＆振り直し
-    if (mode === '後日') {
-      const codeParam = storeInfo.agentCode || storeInfo.deptCode || '';
-      const checkRes = await fetch(`/api/celf?agencyCode=${codeParam}`);
-      if (checkRes.ok) {
-        const checkData = await checkRes.json();
-        let maxSeq = 0;
-        if (Array.isArray(checkData)) {
-          checkData.forEach((item: any) => {
-            if (item.振込No通番 && typeof item.振込No通番 === 'number') {
-              if (item.振込No通番 > maxSeq) maxSeq = item.振込No通番;
-            }
-          });
-        }
-        if (maxSeq >= sequenceNo) {
-          finalSeq = maxSeq + 1;
-          finalTransferNoStr = `${yymm}${finalSeq}`;
+// 送信直前の最新通番二重チェック部分（handleSubmit内）
+if (mode === '後日') {
+  const checkRes = await fetch(`/api/celf`);
+  if (checkRes.ok) {
+    const checkData = await checkRes.json();
+    let maxSeq = 0;
+    const records = Array.isArray(checkData) ? checkData : (checkData.records || []);
+
+    records.forEach((item: any) => {
+      if (item['振込No通番'] !== undefined && item['振込No通番'] !== null) {
+        const seq = Number(item['振込No通番']);
+        if (!isNaN(seq) && seq > maxSeq) {
+          maxSeq = seq;
         }
       }
-    }
+    });
 
+    if (maxSeq >= sequenceNo) {
+      finalSeq = maxSeq + 1;
+      finalTransferNoStr = `${yymm}${finalSeq}`;
+    }
+  }
+}
     // 明細データフォーマット
     const formattedItems = items.map((item, index) => {
       const finalAppNo = item.isExisting ? item.existingPlan : item.appNo;
