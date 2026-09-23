@@ -11,7 +11,7 @@ export async function GET(request: Request) {
 
     // CELFデータ全件取得・検索用エンドポイント (/records)
     const CELF_API_URL = encodeURI(
-      `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}/records?company=${companyId}`
+      `https://api.cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}/records?company=${companyId}`
     );
 
     const response = await fetch(CELF_API_URL, {
