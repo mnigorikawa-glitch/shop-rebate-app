@@ -9,43 +9,32 @@ export async function GET(request: Request) {
     const companyId = '340076c518';
     const tableName = '後日cbデータtest';
 
-    // CELFデータ検索用エンドポイント (/query)
+    // CELFデータ全件取得・検索用エンドポイント (/records)
     const CELF_API_URL = encodeURI(
-      `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}/query?company=${companyId}`
+      `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}/records?company=${companyId}`
     );
 
     const response = await fetch(CELF_API_URL, {
-      method: 'POST', // CELFの検索(query)はPOSTメソッドで空オブジェクト等を送る仕様の場合があります
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json; charset=utf-8',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
-      body: JSON.stringify({}), // 全件取得
       cache: 'no-store',
     });
 
-    // POST/query が失敗した場合は従来の GET/records をフォールバック試行
     if (!response.ok) {
-      const fallbackUrl = encodeURI(
-        `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}?company=${companyId}`
+      const errorText = await response.text();
+      return NextResponse.json(
+        { error: 'CELF取得失敗', status: response.status, detail: errorText },
+        { status: response.status }
       );
-      const fallbackRes = await fetch(fallbackUrl, {
-        method: 'GET',
-        headers: { 'X-CELF-API-KEY': CELF_API_KEY },
-        cache: 'no-store',
-      });
-
-      if (!fallbackRes.ok) {
-        return NextResponse.json({ error: 'CELF取得失敗', status: fallbackRes.status }, { status: fallbackRes.status });
-      }
-
-      const fallbackData = await fallbackRes.json();
-      const records = Array.isArray(fallbackData) ? fallbackData : (fallbackData.records || fallbackData[tableName] || []);
-      return NextResponse.json(records);
     }
 
     const data = await response.json();
-    const records = Array.isArray(data) ? data : (data.records || data[tableName] || []);
+    // CELFの返却データ形式（配列直接、または data.records / data[tableName]）にフレキシブルに対応
+    const records = Array.isArray(data)
+      ? data
+      : data.records || data[tableName] || [];
 
     return NextResponse.json(records);
   } catch (error: any) {
