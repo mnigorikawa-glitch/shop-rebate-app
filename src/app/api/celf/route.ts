@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const targetYymm = searchParams.get('transferNoYymm') || '';
 
     // CELFの検索用エンドポイント（/query）
-    const rawUrl = `url?id=16v1/tables/${tableName}/query?company=${companyId}`;
+    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}/query?company=${companyId}`;
     const CELF_API_URL = encodeURI(rawUrl);
 
     console.log('[CELF POST Query Request URL]:', CELF_API_URL);
