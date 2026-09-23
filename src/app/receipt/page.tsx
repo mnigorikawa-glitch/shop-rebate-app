@@ -1,854 +1,418 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useMemo } from 'react';
 
-const DEFAULT_REDUCTION_MASTER = [
-  { 表記名: 'auUQ_SIM単体MNP', 還元基準額: 20000, セット割対応: 'false' },
-  { 表記名: '自宅セット割(ネットコース)', 還元基準額: 5000, セット割対応: 'true' },
-  { 表記名: '自宅セット割(でんきコース)', 還元基準額: 5000, セット割対応: 'true' },
-  { 表記名: 'auPAYゴールドカード', 還元基準額: 5000, セット割対応: 'false' },
-  { 表記名: '当日特典キャッシュバック', 還元基準額: 5000, セット割対応: 'false' },
-  { 表記名: 'その他（手入力）', 還元基準額: 0, セット割対応: 'false' },
-];
+// --- 型定義 ---
+interface ReceiptItem {
+  id: string;
+  contentType: string; // 例: '自宅セット割(でんきコース)'
+  appNumberType: string; // '既存+トクトク2' | '既存+コミコミバリュー' など
+  setDiscountNum: string; // セット割申番
+  unitPrice: number; // 還元単価
+}
+
+interface SummaryRow {
+  contentType: string;
+  unitPrice: number;
+  count: number;
+  subtotal: number;
+}
 
 export default function ReceiptPage() {
-  const router = useRouter();
-  const [mode, setMode] = useState<'即時' | '後日'>('即時');
+  // --- フォーム状態 ---
+  const [customerName, setCustomerName] = useState<string>('志賀太郎');
+  const [posDate, setPosDate] = useState<string>('2026-09-23');
+  const [paymentMethod, setPaymentMethod] = useState<string>('口座振替'); // 口座振替, 窓口現金 等
+  const [transferNo, setTransferNo] = useState<string>('2609-1'); // 自動採番の振込No
+  const [staffName, setStaffName] = useState<string>('佐藤');
+  const [checkerName, setCheckerName] = useState<string>('伊東');
+  const [remarks, setRemarks] = useState<string>('');
 
-  // 店舗情報
-  const [storeName, setStoreName] = useState('au Style イオンモールつくば');
-  const [storeInfo, setStoreInfo] = useState<any>({});
-
-  // CELF「還元内容」マスタ
-  const [reductionMaster, setReductionMaster] = useState<any[]>(DEFAULT_REDUCTION_MASTER);
-
-  useEffect(() => {
-    const savedStoreObjStr = sessionStorage.getItem('selectedStoreObj');
-    if (savedStoreObjStr) {
-      try {
-        const obj = JSON.parse(savedStoreObjStr);
-        setStoreInfo(obj);
-        setStoreName(obj.storeName);
-      } catch (e) {}
-    } else {
-      const savedStore = sessionStorage.getItem('selectedStore');
-      if (savedStore) setStoreName(savedStore);
-    }
-
-    async function fetchReductions() {
-      try {
-        const res = await fetch('/api/celf/reductions');
-        const data = await res.json();
-        if (data.success && Array.isArray(data.reductions) && data.reductions.length > 0) {
-          setReductionMaster(data.reductions);
-        }
-      } catch (err) {
-        console.error('還元内容マスタの取得に失敗しました', err);
-      }
-    }
-    fetchReductions();
-  }, []);
-
-  // 追加フォーム項目
-  const [customerName, setCustomerName] = useState('');
-  const [posDate, setPosDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
-
-  // 基本情報
-  const [remittanceMethod, setRemittanceMethod] = useState<'口座振替' | 'ATM受取'>('口座振替');
-  const [staffName, setStaffName] = useState('');
-  const [checkerName, setCheckerName] = useState('');
-  const [counterNo, setCounterNo] = useState('1');
-  const [posBillNo, setPosBillNo] = useState('');
-
-  // 振込No自動採番用ステート
-  const [yymm, setYymm] = useState<string>('');
-  const [sequenceNo, setSequenceNo] = useState<number>(0);
-  const [displayTransferNo, setDisplayTransferNo] = useState<string>('');
-
-  // 動的同意事項チェック状態
-  const [agreeTerms, setAgreeTerms] = useState<boolean[]>([]);
-
-  // 還元内訳
-  const [items, setItems] = useState<Array<{
-    type: string;
-    customType: string;
-    isExisting: boolean;
-    existingPlan: string;
-    appNo: string;
-    subAppNo: string;
-    amount: string;
-  }>>([
+  // 明細リスト
+  const [items, setItems] = useState<ReceiptItem[]>([
     {
-      type: 'auUQ_SIM単体MNP',
-      customType: '',
-      isExisting: false,
-      existingPlan: '既存+トクトク2',
-      appNo: '',
-      subAppNo: '',
-      amount: '20000',
+      id: '1',
+      contentType: '自宅セット割(でんきコース)',
+      appNumberType: '既存+トクトク2',
+      setDiscountNum: 'EQ1234567',
+      unitPrice: 10000,
+    },
+    {
+      id: '2',
+      contentType: '自宅セット割(ネットコース)',
+      appNumberType: '既存+コミコミバリュー',
+      setDiscountNum: 'EQ1234567',
+      unitPrice: 10000,
+    },
+    {
+      id: '3',
+      contentType: '自宅セット割(でんきコース)',
+      appNumberType: '既存+トクトク2',
+      setDiscountNum: 'EQ1234567',
+      unitPrice: 10000,
     },
   ]);
 
-  // 備考欄
-  const [memo, setMemo] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const [agreed, setAgreed] = useState(false);
-  const [signatureData, setSignatureData] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
-
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const isDrawing = useRef(false);
-
-  // --- 後日キャッシュバックの振込No取得 (CELF GET) ---
-  const fetchLatestTransferNo = async () => {
-    const now = new Date();
-    const yy = String(now.getFullYear()).slice(-2);
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const prefix = `${yy}${mm}-`; // "2609-"
-    setYymm(prefix);
-
-    try {
-      const codeParam = storeInfo.agentCode || storeInfo.deptCode || '';
-      const res = await fetch(`/api/celf?agencyCode=${codeParam}`);
-      if (res.ok) {
-        const data = await res.json();
-        let maxSeq = 0;
-        if (Array.isArray(data)) {
-          data.forEach((item: any) => {
-            if (item.振込No通番 && typeof item.振込No通番 === 'number') {
-              if (item.振込No通番 > maxSeq) maxSeq = item.振込No通番;
-            }
-          });
-        }
-        const nextSeq = maxSeq + 1;
-        setSequenceNo(nextSeq);
-        setDisplayTransferNo(`${prefix}${nextSeq}`);
-      } else {
-        setSequenceNo(1);
-        setDisplayTransferNo(`${prefix}1`);
-      }
-    } catch (err) {
-      console.error('振込No取得エラー:', err);
-      setSequenceNo(1);
-      setDisplayTransferNo(`${prefix}1`);
-    }
-  };
-
-  // モードおよび還元方法変更時の連動制御
-  useEffect(() => {
-    setAgreed(false);
-    if (mode === '後日') {
-      fetchLatestTransferNo();
-      if (remittanceMethod === '口座振替') {
-        setAgreeTerms([false, false, false]);
-      } else {
-        setAgreeTerms([false, false, false, false, false]);
-      }
-    } else {
-      setAgreeTerms([]);
-    }
-  }, [mode, remittanceMethod]);
-
-  // 同意項目の全チェック判定
-  const isAllTermsChecked = useMemo(() => {
-    if (mode === '即時') return true;
-    if (agreeTerms.length === 0) return false;
-    return agreeTerms.every((v) => v === true);
-  }, [mode, agreeTerms]);
-
-  const isSetDiscountSupported = (typeName: string) => {
-    const master = reductionMaster.find(
-      (m) => (m.表記名 || m.還元項目) === typeName
-    );
-    return master ? String(master.セット割対応) === 'true' : false;
-  };
-
-  // 一覧集計
-  const aggregatedSummary = useMemo(() => {
-    const map = new Map<string, { typeName: string; unitPrice: number; count: number; total: number }>();
+  // --- 計算ロジック ---
+  // 還元項目ごとの集計テーブル用データ
+  const summaryRows = useMemo<SummaryRow[]>(() => {
+    const map = new Map<string, { unitPrice: number; count: number }>();
 
     items.forEach((item) => {
-      const typeName = item.type === 'その他（手入力）' ? (item.customType || 'その他') : item.type;
-      const unitPrice = Number(item.amount) || 0;
-
-      if (map.has(typeName)) {
-        const current = map.get(typeName)!;
-        current.count += 1;
-        current.total += unitPrice;
-      } else {
-        map.set(typeName, {
-          typeName,
-          unitPrice,
-          count: 1,
-          total: unitPrice,
-        });
-      }
+      if (!item.contentType) return;
+      const key = item.contentType;
+      const current = map.get(key) || { unitPrice: item.unitPrice, count: 0 };
+      map.set(key, {
+        unitPrice: item.unitPrice,
+        count: current.count + 1,
+      });
     });
 
-    return Array.from(map.values());
+    return Array.from(map.entries()).map(([contentType, data]) => ({
+      contentType,
+      unitPrice: data.unitPrice,
+      count: data.count,
+      subtotal: data.unitPrice * data.count,
+    }));
   }, [items]);
 
-  const totalAmount = useMemo(() => {
-    return aggregatedSummary.reduce((sum, item) => sum + item.total, 0);
-  }, [aggregatedSummary]);
+  // 合計還元額
+  const totalAmount = useMemo<number>(() => {
+    return summaryRows.reduce((acc, row) => acc + row.subtotal, 0);
+  }, [summaryRows]);
 
-  // Canvas制御
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#000';
-  }, [mode]);
-
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    isDrawing.current = true;
-    draw(e);
+  // --- 操作ハンドラ ---
+  const handleAddItem = () => {
+    const newItem: ReceiptItem = {
+      id: Date.now().toString(),
+      contentType: '自宅セット割(でんきコース)',
+      appNumberType: '既存+トクトク2',
+      setDiscountNum: '',
+      unitPrice: 10000,
+    };
+    setItems([...items, newItem]);
   };
 
-  const stopDrawing = () => {
-    if (isDrawing.current) {
-      isDrawing.current = false;
-      const canvas = canvasRef.current;
-      if (canvas) setSignatureData(canvas.toDataURL());
-    }
+  const handleRemoveItem = (id: string) => {
+    setItems(items.filter((item) => item.id !== id));
   };
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  };
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.beginPath();
-    setSignatureData(null);
-  };
-
-  const addItem = () => {
-    const defaultMaster = reductionMaster[0] || {};
-    setItems([
-      ...items,
-      {
-        type: defaultMaster.表記名 || defaultMaster.還元項目 || 'auUQ_SIM単体MNP',
-        customType: '',
-        isExisting: false,
-        existingPlan: '既存+トクトク2',
-        appNo: '',
-        subAppNo: '',
-        amount: String(defaultMaster.還元基準額 ?? 20000),
-      },
-    ]);
-  };
-
-  const removeItem = (index: number) => {
-    if (items.length === 1) return;
-    setItems(items.filter((_, i) => i !== index));
-  };
-
-  const updateItem = (index: number, field: string, value: any) => {
-    const newItems = [...items];
-    newItems[index] = { ...newItems[index], [field]: value };
-
-    if (field === 'type') {
-      const master = reductionMaster.find(
-        (m) => (m.表記名 || m.還元項目) === value
-      );
-      if (master) {
-        newItems[index].amount = String(master.還元基準額 ?? 0);
-        if (String(master.セット割対応) !== 'true') {
-          newItems[index].isExisting = false;
-          newItems[index].subAppNo = '';
+  const handleItemChange = (id: string, field: keyof ReceiptItem, value: any) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          const updated = { ...item, [field]: value };
+          // 必要に応じて単価の自動設定などを拡張
+          return updated;
         }
-      }
-    }
-
-    setItems(newItems);
+        return item;
+      })
+    );
   };
 
-  // --- 送信処理 ---
-  const handleSubmit = async () => {
-    if (!staffName) return alert('担当者名を入力してください。');
-    if (mode === '即時' && !posBillNo) return alert('POS業務伝票番号を入力してください。');
-    if (items.some((item) => !item.isExisting && !item.appNo))
-      return alert('全ての還元内訳に申込書番号を入力（または既存を選択）してください。');
-    if (!signatureData) return alert('お客様署名（サイン）をお願いいたします。');
-
-    setIsSending(true);
+  // --- 保存・CELF連携処理 ---
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
 
     try {
-      let finalSeq = sequenceNo;
-      let finalTransferNoStr = displayTransferNo;
+      // 1. 振込Noの分割処理 (例: "2609-1" -> 年月: "2609", 通番: "1")
+      const [transferNoYearMonth, transferNoSeq] = transferNo ? transferNo.split('-') : ['', ''];
 
-      // 後日キャッシュバック時は送信直前に最新通番を二重チェック＆振り直し
-      if (mode === '後日') {
-        const codeParam = storeInfo.agentCode || storeInfo.deptCode || '';
-        const checkRes = await fetch(`/api/celf?agencyCode=${codeParam}`);
-        if (checkRes.ok) {
-          const checkData = await checkRes.json();
-          let maxSeq = 0;
-          if (Array.isArray(checkData)) {
-            checkData.forEach((item: any) => {
-              if (item.振込No通番 && typeof item.振込No通番 === 'number') {
-                if (item.振込No通番 > maxSeq) maxSeq = item.振込No通番;
-              }
-            });
-          }
-          if (maxSeq >= sequenceNo) {
-            finalSeq = maxSeq + 1;
-            finalTransferNoStr = `${yymm}${finalSeq}`;
-          }
-        }
-      }
+      // 2. CELF登録用データの構造化
+      const celfDataList = items.map((item, index) => {
+        // 【修正点②】合計還元額は「1つ目のデータ（index === 0）」にのみ設定
+        const rowTotalAmount = index === 0 ? totalAmount : 0;
 
-      // 明細データフォーマット
-      const formattedItems = items.map((item, index) => {
-        const finalAppNo = item.isExisting ? item.existingPlan : item.appNo;
+        return {
+          customerName,
+          posDate,
+          paymentMethod,
+          staffName,
+          checkerName,
+          remarks,
 
-        const baseItem: any = {
-          type: item.type === 'その他（手入力）' ? item.customType : item.type,
-          appNo: finalAppNo,
-          subAppNo: isSetDiscountSupported(item.type) ? item.subAppNo : '',
-          amount: Number(item.amount) || 0,
+          // 【修正点①】CELFの後日cbデータ test カラム列「振込No年月」「振込No通番」へ個別に格納
+          振込No年月: transferNoYearMonth || '',
+          振込No通番: transferNoSeq || '',
+
+          // 明細データ
+          contentType: item.contentType,
+          appNumberType: item.appNumberType,
+          setDiscountNum: item.setDiscountNum,
+          unitPrice: item.unitPrice,
+
+          // 合計還元額 (1件目のみ値、2件目以降は0)
+          totalAmount: rowTotalAmount,
         };
-
-        // 後日キャッシュバック時、最初の1件目のみ振込合計金額を付与
-        if (mode === '後日' && index === 0) {
-          baseItem.totalTransferAmount = totalAmount;
-        }
-
-        return baseItem;
       });
 
-      const formattedPosDate = posDate ? posDate.replace(/-/g, '/') : '';
-
-      const payload: any = {
-        mode,
-        storeName,
-        agentCode: storeInfo.agentCode || '',
-        posAbbr: storeInfo.posAbbr || '',
-        deptCode: storeInfo.deptCode || '',
-        customerName,
-        posDate: formattedPosDate,
-        memo,
-        remittanceMethod: mode === '後日' ? remittanceMethod : '',
-        staffName,
-        checkerName,
-        counterNo: mode === '即時' ? counterNo : '',
-        posBillNo: mode === '即時' ? posBillNo : '',
-        totalAmount,
-        items: formattedItems,
-      };
-
-      if (mode === '後日') {
-        payload.transferNoYymm = yymm; // "2609-"
-        payload.transferNoSeq = finalSeq; // 数値
-        payload.transferNo = finalTransferNoStr;
-      }
-
-      const res = await fetch('/api/celf', {
+      // API呼び出し例 (実際のエンドポイントに合わせて調整)
+      const response = await fetch('/api/celf/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ records: celfDataList }),
       });
 
-      const data = await res.json();
-      if (!data.success) {
-        const payloadStr = data.sentPayloadString || 'なし';
-        const errDetail = data.celfResponse ? JSON.stringify(data.celfResponse) : data.error;
-        throw new Error(`CELF応答: ${errDetail}\n\n送信データ:\n${payloadStr}`);
+      if (!response.ok) {
+        throw new Error('CELFへのデータ保存に失敗しました。');
       }
 
-      const logMsg =
-        mode === '即時'
-          ? '受領書を保存しました。（振込No: 即時処理）'
-          : `受領書を保存しました。（振込No: ${finalTransferNoStr}で登録しました）`;
-      alert(logMsg);
-      window.print();
-    } catch (err: any) {
-      alert(`エラー詳細:\n${err.message}`);
+      alert('正常に保存されました。');
+    } catch (error) {
+      console.error(error);
+      alert('エラーが発生しました。保存処理を確認してください。');
     } finally {
-      setIsSending(false);
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 md:p-8 font-sans">
-      <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-md p-6 print:shadow-none print:p-0">
-        
-        {/* ヘッダー */}
-        <div className="border-b pb-4 mb-6 flex justify-between items-center print:hidden">
-          <div>
-            <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2.5 py-1 rounded border border-orange-200">
-              {storeName}
-            </span>
-            <h1 className="text-xl font-bold text-slate-800 mt-2">キャッシュバック受領書 作成</h1>
-          </div>
-          <button
-            onClick={() => router.push('/menu')}
-            className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-2 rounded-lg border border-slate-200"
-          >
-            ← メニューへ戻る
-          </button>
-        </div>
+    <div className="max-w-4xl mx-auto p-6 bg-slate-50 min-h-screen text-slate-800">
+      <h1 className="text-xl font-bold mb-6 text-slate-900 border-b pb-2">店舗還元 受領書作成</h1>
 
-        {/* タブ切り替え */}
-        <div className="grid grid-cols-2 gap-2 bg-slate-200 p-1 rounded-lg mb-6 print:hidden">
-          <button
-            type="button"
-            onClick={() => setMode('即時')}
-            className={`py-2 text-sm font-bold rounded-md transition-all ${
-              mode === '即時' ? 'bg-orange-500 text-white shadow' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            ⚡ 即時キャッシュバック (店頭現金)
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('後日')}
-            className={`py-2 text-sm font-bold rounded-md transition-all ${
-              mode === '後日' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            📅 後日キャッシュバック (口座振込/ATM受取)
-          </button>
-        </div>
-
+      <form onSubmit={handleSubmit} className="space-y-8">
         {/* 1. 基本情報 */}
-        <div className="space-y-4 mb-6">
-          <h2 className="text-md font-bold text-slate-700 border-l-4 border-slate-700 pl-2 print:hidden">1. 基本情報</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
+        <section className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm space-y-4">
+          <h2 className="text-base font-bold text-slate-900 border-l-4 border-blue-600 pl-2">
+            1. 基本情報
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">お客様名 (印刷用お宛名)</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                お客様名 (印刷用お宛名)
+              </label>
               <input
                 type="text"
-                placeholder="例: 田中 太郎 様"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full border border-slate-300 rounded p-2 text-sm bg-white"
+                className="w-full px-3 py-2 border border-slate-300 rounded text-sm bg-slate-50 focus:bg-white"
               />
             </div>
+
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">日付 (POS登録日) *</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                日付 (POS登録日) <span className="text-red-500">*</span>
+              </label>
               <input
                 type="date"
                 value={posDate}
                 onChange={(e) => setPosDate(e.target.value)}
-                className="w-full border border-slate-300 rounded p-2 text-sm bg-white"
+                required
+                className="w-full px-3 py-2 border border-slate-300 rounded text-sm bg-slate-50 focus:bg-white"
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            
-            {/* 即時キャッシュバック時は店舗名欄を非表示（最上部に表示されているため） */}
-            {mode === '後日' && (
-              <div>
-                <label className="block text-xs font-semibold text-blue-700 mb-1">還元方法 *</label>
-                <select
-                  value={remittanceMethod}
-                  onChange={(e) => setRemittanceMethod(e.target.value as '口座振替' | 'ATM受取')}
-                  className="w-full border border-blue-400 bg-blue-50 rounded p-2 text-sm font-bold text-blue-900 focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="口座振替">口座振替</option>
-                  <option value="ATM受取">ATM受取</option>
-                </select>
-              </div>
-            )}
-
-            {mode === '即時' ? (
-              <>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">POS業務伝票番号 *</label>
-                  <input
-                    type="text"
-                    placeholder="例: A01234567"
-                    value={posBillNo}
-                    onChange={(e) => setPosBillNo(e.target.value)}
-                    className="w-full border border-slate-300 rounded p-2 text-sm font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 mb-1">お渡しカウンター</label>
-                  <select
-                    value={counterNo}
-                    onChange={(e) => setCounterNo(e.target.value)}
-                    className="w-full border border-slate-300 rounded p-2 text-sm bg-white"
-                  >
-                    <option value="1">1番カウンター</option>
-                    <option value="2">2番カウンター</option>
-                    <option value="3">3番カウンター</option>
-                    <option value="イベント特設">イベント特設</option>
-                  </select>
-                </div>
-              </>
-            ) : (
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">振込No (自動採番)</label>
-                <input
-                  type="text"
-                  value={displayTransferNo || '取得中...'}
-                  disabled
-                  className="w-full border border-slate-200 bg-slate-100 rounded p-2 text-sm font-bold text-blue-700"
-                />
-              </div>
-            )}
 
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">担当者（出金/入力者） *</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                還元方法 <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded text-sm bg-slate-50 focus:bg-white"
+              >
+                <option value="口座振替">口座振替</option>
+                <option value="窓口現金">窓口現金</option>
+                <option value="後日キャッシュバック">後日キャッシュバック</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                振込No (自動採番)
+              </label>
+              <input
+                type="text"
+                value={transferNo}
+                readOnly
+                className="w-full px-3 py-2 border border-slate-200 rounded text-sm bg-slate-100 text-slate-600 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                担当者 (出金/入力者) <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 value={staffName}
                 onChange={(e) => setStaffName(e.target.value)}
-                className="w-full border border-slate-300 rounded p-2 text-sm"
+                required
+                className="w-full px-3 py-2 border border-slate-300 rounded text-sm bg-slate-50 focus:bg-white"
               />
             </div>
+
             <div>
-              <label className="block text-xs font-semibold text-slate-500 mb-1">Wチェック者</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">
+                Wチェック者
+              </label>
               <input
                 type="text"
                 value={checkerName}
                 onChange={(e) => setCheckerName(e.target.value)}
-                className="w-full border border-slate-300 rounded p-2 text-sm"
+                className="w-full px-3 py-2 border border-slate-300 rounded text-sm bg-slate-50 focus:bg-white"
               />
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* 2. 還元内容内訳フォーム */}
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-2 print:hidden">
-            <h2 className="text-md font-bold text-slate-700 border-l-4 border-slate-700 pl-2">2. 還元内容内訳</h2>
+        {/* 2. 還元内容内訳 */}
+        <section className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-base font-bold text-slate-900 border-l-4 border-blue-600 pl-2">
+              2. 還元内容内訳
+            </h2>
             <button
               type="button"
-              onClick={addItem}
-              className="text-xs bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700"
+              onClick={handleAddItem}
+              className="px-3 py-1.5 bg-slate-800 text-white text-xs font-semibold rounded hover:bg-slate-700 transition"
             >
               + 内訳を追加
             </button>
           </div>
 
-          <div className="space-y-4 print:hidden">
-            {items.map((item, index) => {
-              const setSupported = isSetDiscountSupported(item.type);
-
-              return (
-                <div key={index} className="p-3 bg-slate-50 border rounded-lg space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
-                    
-                    <div className="md:col-span-4">
-                      <label className="block text-xs text-slate-500 mb-1">還元内容 *</label>
-                      <select
-                        value={item.type}
-                        onChange={(e) => updateItem(index, 'type', e.target.value)}
-                        className="w-full border border-slate-300 rounded p-1.5 text-sm bg-white"
-                      >
-                        {reductionMaster.map((m) => {
-                          const name = m.表記名 || m.還元項目;
-                          return <option key={name} value={name}>{name}</option>;
-                        })}
-                      </select>
-                      {item.type === 'その他（手入力）' && (
-                        <input
-                          type="text"
-                          placeholder="還元内容を入力"
-                          value={item.customType}
-                          onChange={(e) => updateItem(index, 'customType', e.target.value)}
-                          className="w-full border border-slate-300 rounded p-1.5 text-sm mt-1"
-                        />
-                      )}
-                    </div>
-
-                    <div className="md:col-span-3">
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs text-slate-500">申込書番号 *</label>
-                        {setSupported && (
-                          <button
-                            type="button"
-                            onClick={() => updateItem(index, 'isExisting', !item.isExisting)}
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all ${
-                              item.isExisting
-                                ? 'bg-orange-500 text-white'
-                                : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                            }`}
-                          >
-                            既存
-                          </button>
-                        )}
-                      </div>
-
-                      {setSupported && item.isExisting ? (
-                        <select
-                          value={item.existingPlan}
-                          onChange={(e) => updateItem(index, 'existingPlan', e.target.value)}
-                          className="w-full border border-orange-400 bg-orange-50 rounded p-1.5 text-sm font-semibold text-orange-900"
-                        >
-                          <option value="既存+トクトク2">既存+トクトク2</option>
-                          <option value="既存+コミコミバリュー">既存+コミコミバリュー</option>
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          placeholder="例: EAD123456"
-                          value={item.appNo}
-                          onChange={(e) => updateItem(index, 'appNo', e.target.value)}
-                          className="w-full border border-slate-300 rounded p-1.5 text-sm font-mono bg-white"
-                        />
-                      )}
-                    </div>
-
-                    <div className="md:col-span-3">
-                      <label className={`block text-xs mb-1 ${setSupported ? 'text-slate-500' : 'text-slate-300'}`}>
-                        セット割申番
-                      </label>
-                      {setSupported ? (
-                        <input
-                          type="text"
-                          placeholder="例: EQ123456"
-                          value={item.subAppNo}
-                          onChange={(e) => updateItem(index, 'subAppNo', e.target.value)}
-                          className="w-full border border-slate-300 rounded p-1.5 text-sm font-mono bg-white"
-                        />
-                      ) : (
-                        <input
-                          type="text"
-                          disabled
-                          placeholder="対象外"
-                          className="w-full border border-slate-200 bg-slate-100 rounded p-1.5 text-sm text-slate-400 cursor-not-allowed"
-                        />
-                      )}
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs text-slate-500">還元単価 (円)</label>
-                        {items.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeItem(index)}
-                            className="text-red-500 text-xs font-bold hover:underline"
-                          >
-                            削除
-                          </button>
-                        )}
-                      </div>
-                      <input
-                        type="number"
-                        value={item.amount}
-                        onChange={(e) => updateItem(index, 'amount', e.target.value)}
-                        className="w-full border border-slate-300 rounded p-1.5 text-sm text-right font-mono"
-                      />
-                    </div>
-
-                  </div>
+          <div className="space-y-3">
+            {items.map((item, index) => (
+              <div
+                key={item.id}
+                className="p-3 border border-slate-200 rounded bg-slate-50/50 relative grid grid-cols-1 md:grid-cols-4 gap-3 items-end"
+              >
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    還元内容 <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={item.contentType}
+                    onChange={(e) => handleItemChange(item.id, 'contentType', e.target.value)}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white"
+                  >
+                    <option value="自宅セット割(でんきコース)">自宅セット割(でんきコース)</option>
+                    <option value="自宅セット割(ネットコース)">自宅セット割(ネットコース)</option>
+                  </select>
                 </div>
-              );
-            })}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    申込書番号 <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={item.appNumberType}
+                    onChange={(e) => handleItemChange(item.id, 'appNumberType', e.target.value)}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white"
+                  >
+                    <option value="既存+トクトク2">既存+トクトク2</option>
+                    <option value="既存+コミコミバリュー">既存+コミコミバリュー</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    セット割申番
+                  </label>
+                  <input
+                    type="text"
+                    value={item.setDiscountNum}
+                    onChange={(e) => handleItemChange(item.id, 'setDiscountNum', e.target.value)}
+                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      還元単価 (円)
+                    </label>
+                    <input
+                      type="number"
+                      value={item.unitPrice}
+                      onChange={(e) =>
+                        handleItemChange(item.id, 'unitPrice', Number(e.target.value))
+                      }
+                      className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs text-right bg-white"
+                    />
+                  </div>
+                  {items.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveItem(item.id)}
+                      className="text-xs text-red-600 font-semibold hover:underline pt-4"
+                    >
+                      削除
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
 
-          {/* 集計後の還元内訳一覧表 */}
-          <div className="mt-4 border border-slate-300 rounded-lg overflow-hidden">
-            <table className="w-full text-sm text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-300 text-slate-700 font-bold">
-                  <th className="p-2 border-r border-slate-300">還元項目</th>
-                  <th className="p-2 border-r border-slate-300 text-right w-28">還元単価</th>
-                  <th className="p-2 border-r border-slate-300 text-center w-20">件数</th>
-                  <th className="p-2 text-right w-32">還元額</th>
+          {/* 集計テーブル */}
+          <div className="mt-6 border border-slate-200 rounded overflow-hidden">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-semibold">
+                <tr>
+                  <th className="p-2.5">還元項目</th>
+                  <th className="p-2.5 text-right">還元単価</th>
+                  <th className="p-2.5 text-center">件数</th>
+                  <th className="p-2.5 text-right">還元額</th>
                 </tr>
               </thead>
-              <tbody>
-                {aggregatedSummary.map((summaryItem, idx) => (
-                  <tr key={idx} className="border-b border-slate-200">
-                    <td className="p-2 border-r border-slate-200">
-                      {summaryItem.typeName}
+              <tbody className="divide-y divide-slate-200 bg-white">
+                {summaryRows.map((row, idx) => (
+                  <tr key={idx}>
+                    <td className="p-2.5 font-medium">{row.contentType}</td>
+                    <td className="p-2.5 text-right font-mono">
+                      ¥ {row.unitPrice.toLocaleString()}
                     </td>
-                    <td className="p-2 border-r border-slate-200 text-right font-mono">
-                      ¥ {summaryItem.unitPrice.toLocaleString()}
-                    </td>
-                    <td className="p-2 border-r border-slate-200 text-center font-mono font-bold text-slate-700">
-                      {summaryItem.count}
-                    </td>
-                    <td className="p-2 text-right font-mono font-semibold">
-                      ¥ {summaryItem.total.toLocaleString()}
+                    <td className="p-2.5 text-center">{row.count}</td>
+                    <td className="p-2.5 text-right font-mono font-semibold">
+                      ¥ {row.subtotal.toLocaleString()}
                     </td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr className="bg-slate-50 font-bold text-slate-800">
-                  <td colSpan={3} className="p-2 border-r border-slate-300 text-right">
+              <tfoot className="bg-slate-100 border-t border-slate-200">
+                <tr>
+                  <td colSpan={3} className="p-2.5 text-right font-bold text-slate-700">
                     合計還元額
                   </td>
-                  <td className="p-2 text-right font-mono text-blue-700 text-base">
+                  <td className="p-2.5 text-right font-mono font-bold text-slate-900 text-sm">
                     ¥ {totalAmount.toLocaleString()}
                   </td>
                 </tr>
               </tfoot>
             </table>
           </div>
-        </div>
 
-        {/* 備考欄 */}
-        <div className="mb-6">
-          <label className="block text-xs font-semibold text-slate-600 mb-1">備考欄 (任意)</label>
-          <textarea
-            rows={2}
-            placeholder="特記事項があればご記入ください"
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            className="w-full border border-slate-300 rounded p-2 text-sm bg-white"
-          />
-        </div>
-
-        {/* 3. 動的同意事項表示エリア (後日キャッシュバック時のみ) */}
-        {mode === '後日' && remittanceMethod === '口座振替' && (
-          <div className="mb-4 p-3 border border-blue-200 bg-blue-50 rounded-lg text-xs space-y-2.5 print:hidden">
-            <div className="font-bold text-blue-900 border-b border-blue-200 pb-1">
-              【口座振替に関する同意事項】
-            </div>
-            {[
-              '振込依頼書にご記入いただいた口座へお振込み致します。原則として振込先口座の変更はできません。',
-              '振込先口座情報の記入不備があった場合、お振込みができません。口座情報は『正確な内容』を『記入漏れがないよう』ご注意ください。',
-              'お振り込みが確認できない場合は、受付店舗までご連絡ください。\n振込用紙の記入不備によりお振込みができなかった場合、振込予定日から90日以内に正しい口座情報を受付店舗へご連絡いただければ、お振込みが可能です。\nただし、お振込予定日から90日を経過した場合は、正しい口座情報をご連絡いただいてもお振込みできませんので、ご了承下さい。',
-            ].map((text, idx) => (
-              <label key={idx} className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={agreeTerms[idx] || false}
-                  onChange={(e) => {
-                    const next = [...agreeTerms];
-                    next[idx] = e.target.checked;
-                    setAgreeTerms(next);
-                  }}
-                  className="mt-0.5 h-4 w-4 text-blue-600 rounded"
-                />
-                <span className="text-slate-700 leading-relaxed whitespace-pre-line">{text}</span>
-              </label>
-            ))}
-          </div>
-        )}
-
-        {mode === '後日' && remittanceMethod === 'ATM受取' && (
-          <div className="mb-4 p-3 border border-emerald-200 bg-emerald-50 rounded-lg text-xs space-y-2.5 print:hidden">
-            <div className="font-bold text-emerald-900 border-b border-emerald-200 pb-1">
-              【ATM受取に関する同意事項】
-            </div>
-            {[
-              'ご契約日の翌々月末頃にお客様の電話番号宛に受取案内のメッセージを配信致します。',
-              '受取案内メッセージが迷惑メールフォルダに届いてしまう場合がございます。メッセージが未着の際は、迷惑メールフォルダに受信がないかご確認をお願い致します。',
-              '還元時期を過ぎても、メッセージが未着の場合は、お手数おかけ致しますが、受付店舗へご連絡をお願い致します。',
-              '入力フォームへの登録に不備があった場合や受取案内のメッセージが未着の場合は、ご本人様確認をさせていただき、口座振込で還元手続きを行いますので再度来店いただきます。当初の還元時期より遅れてしまいますが予めご了承下さい。\n再来店時、独自還元の控え（この用紙）をお持ちでないと還元手続きができません。この用紙はキャッシュバックを受領するまで大切に保管して下さい。 再来店時の持ち物：①本人確認書類(免許証・マイナンバーカード等) ②この用紙のコピー ➂通帳(口座情報がわかるもの)',
-              'セブン銀行ATMでの受取期限はメッセージが到着後、90日間です。期限を超過するとお受け取りできませんのでご了承ください。',
-            ].map((text, idx) => (
-              <label key={idx} className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={agreeTerms[idx] || false}
-                  onChange={(e) => {
-                    const next = [...agreeTerms];
-                    next[idx] = e.target.checked;
-                    setAgreeTerms(next);
-                  }}
-                  className="mt-0.5 h-4 w-4 text-emerald-600 rounded"
-                />
-                <span className="text-slate-700 leading-relaxed whitespace-pre-line">{text}</span>
-              </label>
-            ))}
-          </div>
-        )}
-
-        {/* 4. 最終確認同意 & 電子サイン */}
-        <div className="mb-6">
-          <label
-            className={`flex items-start gap-2 mb-3 p-2.5 rounded-lg border transition-all ${
-              !isAllTermsChecked
-                ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed'
-                : 'bg-amber-50 border-amber-300 cursor-pointer print:hidden'
-            }`}
-          >
-            <input
-              type="checkbox"
-              disabled={!isAllTermsChecked}
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              className="mt-0.5 h-4 w-4"
-            />
-            <span className="text-xs font-bold text-slate-800">
-              {mode === '即時'
-                ? '上記内容に相違ないことを確認し、現金を受領しました。'
-                : '上記内容についてスタッフから説明を受け、同意しました'}
-            </span>
-          </label>
-
-          <div className="border border-slate-300 rounded-lg p-2 bg-slate-50 relative print:bg-white">
-            <div className="flex justify-between text-xs text-slate-500 mb-1 print:hidden">
-              <span>お客様署名欄 (枠内に手書き)</span>
-              <button type="button" onClick={clearCanvas} className="text-slate-500 underline">
-                クリア
-              </button>
-            </div>
-            <canvas
-              ref={canvasRef}
-              width={500}
-              height={120}
-              className="w-full bg-white border border-dashed border-slate-300 rounded touch-none cursor-crosshair"
-              onMouseDown={startDrawing}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
-              onMouseMove={draw}
-              onTouchStart={startDrawing}
-              onTouchEnd={stopDrawing}
-              onTouchMove={draw}
+          {/* 備考欄 */}
+          <div className="pt-2">
+            <label className="block text-xs font-semibold text-slate-600 mb-1">
+              備考欄 (任意)
+            </label>
+            <textarea
+              rows={2}
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="特記事項があればご記入ください"
+              className="w-full px-3 py-2 border border-slate-300 rounded text-xs bg-slate-50 focus:bg-white"
             />
           </div>
-        </div>
+        </section>
 
-        {/* 5. アクションボタン */}
-        <div className="print:hidden">
+        {/* 送信ボタン */}
+        <div className="flex justify-end">
           <button
-            type="button"
-            disabled={!agreed || isSending}
-            onClick={handleSubmit}
-            className={`w-full py-3.5 rounded-lg text-white font-bold transition-all shadow-md ${
-              agreed && !isSending
-                ? mode === '即時'
-                  ? 'bg-orange-500 hover:bg-orange-600'
-                  : 'bg-blue-600 hover:bg-blue-700'
-                : 'bg-slate-300 cursor-not-allowed'
-            }`}
+            type="submit"
+            disabled={isSubmitting}
+            className="px-6 py-2.5 bg-blue-600 text-white font-semibold text-sm rounded shadow hover:bg-blue-700 disabled:opacity-50 transition"
           >
-            {isSending ? 'CELF連携中...' : '受領書を発行・印刷する'}
+            {isSubmitting ? '保存中...' : '受領書データを保存 / CELF送信'}
           </button>
         </div>
-
-      </div>
+      </form>
     </div>
   );
 }
