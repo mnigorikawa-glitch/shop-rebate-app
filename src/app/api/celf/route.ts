@@ -1,45 +1,55 @@
 import { NextResponse } from 'next/server';
 
 // ----------------------------------------------------
-// GET: 最新の「振込No通番」を取得する処理（CELF APIの検索仕様に準拠）
+// GET: 最新の「振込No通番」を取得する処理（CELF API規格に準拠）
 // ----------------------------------------------------
 export async function GET(request: Request) {
   try {
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
-    const appId = '340076c518'; // アプリID/環境識別子
+    const companyId = '340076c518'; // アプリID / 企業識別子
     const tableName = '後日cbデータtest';
 
-    // CELF公式WebAPIのテーブルデータ検索エンドポイント
-    const CELF_API_URL = encodeURI(
-      `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}?app=${appId}`
-    );
+    // 正しい CELF WebAPI エンドポイントURL
+    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`;
+    const CELF_API_URL = encodeURI(rawUrl);
 
-    // CELFのデータ取得APIは POST メソッドでリクエストボディを送る仕様
     const response = await fetch(CELF_API_URL, {
-      method: 'POST',
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json; charset=utf-8',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
-      // 検索条件なし（全件取得）の場合は空オブジェクトを送信
-      body: JSON.stringify({}),
       cache: 'no-store',
     });
 
+    const responseText = await response.text();
+    let data: any = {};
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      data = { rawText: responseText };
+    }
+
     if (!response.ok) {
-      const errorText = await response.text();
       return NextResponse.json(
-        { error: 'CELF取得失敗', status: response.status, detail: errorText },
+        { error: 'CELF取得失敗', status: response.status, detail: data },
         { status: response.status }
       );
     }
 
-    const data = await response.json();
-
     // CELFから返却されるレコード配列の取得
-    const records = Array.isArray(data)
-      ? data
-      : data.records || data[tableName] || data.data || [];
+    let records: any[] = [];
+    if (Array.isArray(data[tableName])) {
+      records = data[tableName];
+    } else if (Array.isArray(data.data)) {
+      records = data.data;
+    } else if (Array.isArray(data)) {
+      records = data;
+    } else {
+      const firstArrayKey = Object.keys(data).find((key) => Array.isArray(data[key]));
+      if (firstArrayKey) {
+        records = data[firstArrayKey];
+      }
+    }
 
     return NextResponse.json(records);
   } catch (error: any) {
@@ -72,14 +82,13 @@ export async function POST(request: Request) {
     } = body;
 
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
-    const appId = '340076c518';
+    const companyId = '340076c518';
 
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
-    // 一括挿入用エンドポイント
-    const CELF_API_URL = encodeURI(
-      `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}/bulkinsert?app=${appId}`
-    );
+    // 正しい CELF 登録用API エンドポイントURL
+    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`;
+    const CELF_API_URL = encodeURI(rawUrl);
 
     const today = new Date();
     const receptionMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
@@ -150,7 +159,7 @@ export async function POST(request: Request) {
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Type': 'application/json',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
       body: JSON.stringify(payload),
