@@ -9,26 +9,43 @@ export async function GET(request: Request) {
     const companyId = '340076c518';
     const tableName = '後日cbデータtest';
 
-    // CELF検索用エンドポイント
+    // CELFデータ検索用エンドポイント (/query)
     const CELF_API_URL = encodeURI(
-      `https://api.cloud.celf.jp/v1/tables/${tableName}/records?company=${companyId}`
+      `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}/query?company=${companyId}`
     );
 
     const response = await fetch(CELF_API_URL, {
-      method: 'GET',
+      method: 'POST', // CELFの検索(query)はPOSTメソッドで空オブジェクト等を送る仕様の場合があります
       headers: {
+        'Content-Type': 'application/json; charset=utf-8',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
+      body: JSON.stringify({}), // 全件取得
       cache: 'no-store',
     });
 
+    // POST/query が失敗した場合は従来の GET/records をフォールバック試行
     if (!response.ok) {
-      return NextResponse.json([], { status: response.status });
+      const fallbackUrl = encodeURI(
+        `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}?company=${companyId}`
+      );
+      const fallbackRes = await fetch(fallbackUrl, {
+        method: 'GET',
+        headers: { 'X-CELF-API-KEY': CELF_API_KEY },
+        cache: 'no-store',
+      });
+
+      if (!fallbackRes.ok) {
+        return NextResponse.json({ error: 'CELF取得失敗', status: fallbackRes.status }, { status: fallbackRes.status });
+      }
+
+      const fallbackData = await fallbackRes.json();
+      const records = Array.isArray(fallbackData) ? fallbackData : (fallbackData.records || fallbackData[tableName] || []);
+      return NextResponse.json(records);
     }
 
     const data = await response.json();
-    // CELFの検索結果データ構造（data.records または data 配列）に対応
-    const records = Array.isArray(data) ? data : data.records || [];
+    const records = Array.isArray(data) ? data : (data.records || data[tableName] || []);
 
     return NextResponse.json(records);
   } catch (error: any) {
@@ -66,7 +83,7 @@ export async function POST(request: Request) {
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
     const CELF_API_URL = encodeURI(
-      `https://api.cloud.celf.jp/v1/tables/${tableName}/bulkinsert?company=${companyId}`
+      `https://cloud.celf.jp/celf-fls-web/api/57v1/tables/${tableName}/bulkinsert?company=${companyId}`
     );
 
     const today = new Date();
@@ -103,7 +120,7 @@ export async function POST(request: Request) {
           'リスト入力者': String(staffName || ''),
         };
       } else {
-        // 振込合計金額: 1行目のみ数値（totalTransferAmount）、2行目以降は空文字 ''
+        // 振込合計金額: 1行目のみ数値、2行目以降は空文字 ''
         const totalAmountVal = (index === 0 && item.totalTransferAmount !== undefined)
           ? (typeof item.totalTransferAmount === 'number' ? item.totalTransferAmount : Number(item.totalTransferAmount || 0))
           : '';
