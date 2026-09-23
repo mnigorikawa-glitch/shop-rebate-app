@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 // ----------------------------------------------------
-// GET: 最新の「振込No通番」を取得する処理（CELF API規格に準拠）
+// GET: 最新の「振込No通番」を取得する処理
 // ----------------------------------------------------
 export async function GET(request: Request) {
   try {
@@ -10,11 +10,23 @@ export async function GET(request: Request) {
     const targetYymm = searchParams.get('transferNoYymm') || '';
 
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
-    const companyId = '340076c518'; // アプリID / 企業識別子
+    const companyId = '340076c518';
     const tableName = '後日cbデータtest';
 
-    // 正しい CELF WebAPI エンドポイントURL
-    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`;
+    // CELF APIエンドポイントの構築
+    // CELFの検索仕様に合わせて query 条件を追加（指定がある場合）
+    let rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`;
+    
+    // CELF検索条件の組み立て（例: 店舗名='auStyle北習志野' AND 振込No年月='2609'）
+    const conditions: string[] = [];
+    if (targetStoreName) conditions.push(`店舗名='${targetStoreName}'`);
+    if (targetYymm) conditions.push(`振込No年月='${targetYymm}'`);
+
+    if (conditions.length > 0) {
+      const queryStr = conditions.join(' AND ');
+      rawUrl += `&query=${encodeURIComponent(queryStr)}`;
+    }
+
     const CELF_API_URL = encodeURI(rawUrl);
 
     const response = await fetch(CELF_API_URL, {
@@ -56,25 +68,27 @@ export async function GET(request: Request) {
     }
 
     // ----------------------------------------------------
-    // レコードの絞り込み（店舗名・振込No年月）
+    // Node.js側でのフォールバック絞り込み（表記揺れ対策）
     // ----------------------------------------------------
     let filteredRecords = records;
 
-    // 店舗名が指定されている場合は絞り込み
     if (targetStoreName) {
       filteredRecords = filteredRecords.filter((row: any) => {
-        const store = row.店舗名 || row.storeName || '';
-        return store === targetStoreName;
+        const store = String(row['店舗名'] || row.店舗名 || row.storeName || '').trim();
+        return store === targetStoreName.trim();
       });
     }
 
-    // 振込No年月（例: '2609'）が指定されている場合は絞り込み
     if (targetYymm) {
       filteredRecords = filteredRecords.filter((row: any) => {
-        const yymm = String(row.振込No年月 || row.transferNoYymm || '');
-        return yymm === targetYymm;
+        const yymm = String(row['振込No年月'] || row.振込No年月 || row.transferNoYymm || '').trim();
+        return yymm === targetYymm.trim();
       });
     }
+
+    // サーバーログで絞り込み結果を確認（Vercel等のログで確認可能）
+    console.log(`[CELF GET] 受け取ったパラメータ: storeName="${targetStoreName}", transferNoYymm="${targetYymm}"`);
+    console.log(`[CELF GET] 取得全件数: ${records.length} 件 / 絞り込み後: ${filteredRecords.length} 件`);
 
     return NextResponse.json(filteredRecords);
   } catch (error: any) {
@@ -111,7 +125,6 @@ export async function POST(request: Request) {
 
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
-    // 正しい CELF 登録用API エンドポイントURL
     const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`;
     const CELF_API_URL = encodeURI(rawUrl);
 
