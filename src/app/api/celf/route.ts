@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 // ----------------------------------------------------
-// GET: 最新の「振込No通番」を取得する処理
+// GET: 最新の「振込No通番」を取得する処理（deptCode のみで検証）
 // ----------------------------------------------------
 export async function GET(request: Request) {
   try {
@@ -10,16 +10,14 @@ export async function GET(request: Request) {
     const tableName = '後日cbデータtest';
 
     const { searchParams } = new URL(request.url);
-    const targetStoreName = searchParams.get('storeName') || '';
     const targetDeptCode = searchParams.get('deptCode') || '';
-    const targetYymm = searchParams.get('transferNoYymm') || '';
 
-    // CELF APIクエリ構築：CELF側でのqueryパラメータを使わず、全件取得してからNode.js側で絞り込む
-    // （クエリ文字の特殊文字によるエラーや403回避のため）
+    // CELF APIエンドポイント（全件取得）
     const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`;
     const CELF_API_URL = encodeURI(rawUrl);
 
     console.log('[CELF GET Request URL]:', CELF_API_URL);
+    console.log('[Target DeptCode]:', targetDeptCode);
 
     const response = await fetch(CELF_API_URL, {
       method: 'GET',
@@ -64,32 +62,30 @@ export async function GET(request: Request) {
       }
     }
 
-    // Node.js側で安全に絞り込み（トリムして判定）
-    let filteredRecords = records;
+    console.log(`[CELF Fetch Success] CELFから取得した総件数: ${records.length}件`);
 
-    if (targetStoreName) {
-      filteredRecords = filteredRecords.filter((row: any) => {
-        const store = String(row['店舗名'] || row.店舗名 || row.storeName || '').trim();
-        return store === targetStoreName.trim();
-      });
+    // 1件目のキー一覧（列名）をログ出力して、カラム名の不一致がないか確認
+    if (records.length > 0) {
+      console.log('[CELF Sample Record Keys]:', Object.keys(records[0]));
     }
+
+    // deptCode のみで絞り込み
+    let filteredRecords = records;
 
     if (targetDeptCode) {
       filteredRecords = filteredRecords.filter((row: any) => {
-        const dept = String(row['部門コード'] || row.部門コード || row.deptCode || '').trim();
-        return dept === targetDeptCode.trim();
+        // 部門コードに該当する可能性のあるキーを全て確認（文字型/数値型の違いも吸収）
+        const deptVal = row['部門コード'] ?? row.部門コード ?? row.deptCode ?? '';
+        return String(deptVal).trim() === targetDeptCode.trim();
       });
     }
 
-    if (targetYymm) {
-      filteredRecords = filteredRecords.filter((row: any) => {
-        const yymm = String(row['振込No年月'] || row.振込No年月 || row.transferNoYymm || '').trim();
-        return yymm === targetYymm.trim();
-      });
-    }
+    console.log(`[Filtered Success] deptCode=${targetDeptCode} での絞り込み結果: ${filteredRecords.length}件`);
 
+    // 絞り込んだ結果を返す
     return NextResponse.json(filteredRecords);
   } catch (error: any) {
+    console.error('[CELF GET Internal Error]:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
