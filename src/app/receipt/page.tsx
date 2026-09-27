@@ -539,7 +539,7 @@ if (mode === '後日') {
                     <option value="10">10</option>
                     <option value="11">11</option>
                     <option value="12">12</option>
-                    <option value="フロア"><フロア</option>
+                    <option value="フロア">フロア</option>
                   </select>
                 </div>
               </>
