@@ -752,10 +752,10 @@ if (mode === '後日') {
 
         {/* 備考欄 */}
         <div className="mb-6">
-          <label className="block text-xs font-semibold text-slate-600 mb-1">備考欄 (任意)</label>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">備考欄</label>
           <textarea
             rows={2}
-            placeholder="特記事項があればご記入ください"
+            placeholder=""
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             className="w-full border border-slate-300 rounded p-2 text-sm bg-white"
