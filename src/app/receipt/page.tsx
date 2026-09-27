@@ -449,19 +449,19 @@ if (mode === '後日') {
             type="button"
             onClick={() => setMode('即時')}
             className={`py-2 text-sm font-bold rounded-md transition-all ${
-              mode === '即時' ? 'bg-orange-500 text-white shadow' : 'text-slate-600 hover:text-slate-900'
+              mode === '即時' ? 'bg-pink-500 text-white shadow' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            ⚡ 即時キャッシュバック (店頭現金)
+            即時キャッシュバック (店頭現金)
           </button>
           <button
             type="button"
             onClick={() => setMode('後日')}
             className={`py-2 text-sm font-bold rounded-md transition-all ${
-              mode === '後日' ? 'bg-blue-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'
+              mode === '後日' ? 'bg-green-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            📅 後日キャッシュバック (口座振込/ATM受取)
+            後日キャッシュバック (口座振込/ATM受取)
           </button>
         </div>
 
@@ -471,7 +471,7 @@ if (mode === '後日') {
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">お客様名 (印刷用お宛名)</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">お客様名 </label>
               <input
                 type="text"
                 placeholder="例: 田中 太郎 様"
@@ -514,7 +514,7 @@ if (mode === '後日') {
                   <label className="block text-xs font-semibold text-slate-500 mb-1">POS業務伝票番号 *</label>
                   <input
                     type="text"
-                    placeholder="例: A01234567"
+                    placeholder="例: N00012345678"
                     value={posBillNo}
                     onChange={(e) => setPosBillNo(e.target.value)}
                     className="w-full border border-slate-300 rounded p-2 text-sm font-mono"
@@ -641,7 +641,7 @@ if (mode === '後日') {
                       ) : (
                         <input
                           type="text"
-                          placeholder="例: EAD123456"
+                          placeholder="例: EAA123456"
                           value={item.appNo}
                           onChange={(e) => updateItem(index, 'appNo', e.target.value)}
                           className="w-full border border-slate-300 rounded p-1.5 text-sm font-mono bg-white"
@@ -656,7 +656,7 @@ if (mode === '後日') {
                       {setSupported ? (
                         <input
                           type="text"
-                          placeholder="例: EQ123456"
+                          placeholder="例: EQ1234567"
                           value={item.subAppNo}
                           onChange={(e) => updateItem(index, 'subAppNo', e.target.value)}
                           className="w-full border border-slate-300 rounded p-1.5 text-sm font-mono bg-white"
