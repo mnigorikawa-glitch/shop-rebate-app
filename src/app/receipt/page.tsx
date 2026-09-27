@@ -496,11 +496,11 @@ if (mode === '後日') {
             {/* 即時キャッシュバック時は店舗名欄を非表示（最上部に表示されているため） */}
             {mode === '後日' && (
               <div>
-                <label className="block text-xs font-semibold text-blue-700 mb-1">還元方法 *</label>
+                <label className="block text-xs font-semibold text-green-700 mb-1">還元方法 *</label>
                 <select
                   value={remittanceMethod}
                   onChange={(e) => setRemittanceMethod(e.target.value as '口座振替' | 'ATM受取')}
-                  className="w-full border border-blue-400 bg-blue-50 rounded p-2 text-sm font-bold text-blue-900 focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-green-400 bg-green-50 rounded p-2 text-sm font-bold text-green-900 focus:ring-2 focus:ring-green-500"
                 >
                   <option value="口座振替">口座振替</option>
                   <option value="ATM受取">ATM受取</option>
@@ -527,10 +527,19 @@ if (mode === '後日') {
                     onChange={(e) => setCounterNo(e.target.value)}
                     className="w-full border border-slate-300 rounded p-2 text-sm bg-white"
                   >
-                    <option value="1">1番カウンター</option>
-                    <option value="2">2番カウンター</option>
-                    <option value="3">3番カウンター</option>
-                    <option value="イベント特設">イベント特設</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                    <option value="8">8</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                    <option value="11">11</option>
+                    <option value="12">12</option>
+                    <option value="フロア"><フロア</option>
                   </select>
                 </div>
               </>
