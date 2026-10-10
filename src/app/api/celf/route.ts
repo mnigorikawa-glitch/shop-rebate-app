@@ -84,7 +84,7 @@ export async function GET(request: Request) {
 }
 
 // ----------------------------------------------------
-// POST: CELFへの一括登録処理（配列直接渡しの構造調整）
+// POST: CELFへの一括登録処理 (/bulkinsert エンドポイント適用)
 // ----------------------------------------------------
 export async function POST(request: Request) {
   try {
@@ -114,7 +114,9 @@ export async function POST(request: Request) {
 
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
     const encodedTableName = encodeURIComponent(tableName);
-    const CELF_API_URL = `https://api.cloud.celf.jp/v1/tables/${encodedTableName}?company=${companyId}`;
+    
+    // 【重要】一括登録API用の正しいエンドポイント (/bulkinsert)
+    const CELF_API_URL = `https://api.cloud.celf.jp/v1/tables/${encodedTableName}/bulkinsert?company=${companyId}`;
 
     const today = new Date();
     const receptionMonth = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/01`;
@@ -176,15 +178,17 @@ export async function POST(request: Request) {
       }
     });
 
-    // CELF標準構造: 配列直渡しのペイロード
-    const payload = records;
+    // CELF一括登録用標準構造
+    const payload = {
+      [tableName]: records,
+    };
 
-    console.log('[CELF POST Array Payload]:', JSON.stringify(payload));
+    console.log('[CELF BulkInsert Payload]:', JSON.stringify(payload));
 
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Type': 'application/json',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
       body: JSON.stringify(payload),
