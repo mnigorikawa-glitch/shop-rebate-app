@@ -329,27 +329,28 @@ if (mode === '後日') {
   });
 
   const checkRes = await fetch(`/api/celf?${params.toString()}`);
-  if (checkRes.ok) {
-    const checkData = await checkRes.json();
-    let maxSeq = 0;
-    const records = Array.isArray(checkData) ? checkData : (checkData.records || []);
+if (checkRes.ok) {
+  const text = await checkRes.text();
+  const checkData = text ? JSON.parse(text) : {};
+  let maxSeq = 0;
+  const records = Array.isArray(checkData) ? checkData : (checkData.records || []);
 
-    records.forEach((item: any) => {
-      const recordDept = item['部門コード'] || item.deptCode;
-      const matchesDept = !deptCode || recordDept === deptCode;
+  records.forEach((item: any) => {
+    const recordDept = item['部門コード'] || item.deptCode;
+    const matchesDept = !deptCode || recordDept === deptCode;
 
-      if (matchesDept && item['振込No通番'] !== undefined && item['振込No通番'] !== null) {
-        const seq = Number(item['振込No通番']);
-        if (!isNaN(seq) && seq > maxSeq) {
-          maxSeq = seq;
-        }
+    const rawSeq = item['振込No通番'] ?? item.transferNoSeq;
+    if (matchesDept && rawSeq !== undefined && rawSeq !== null) {
+      const seq = parseInt(String(rawSeq), 10);
+      if (!isNaN(seq) && seq > maxSeq) {
+        maxSeq = seq;
       }
-    });
-
-    if (maxSeq >= sequenceNo) {
-      finalSeq = maxSeq + 1;
-      finalTransferNoStr = `${yymm}${finalSeq}`;
     }
+  });
+
+  if (maxSeq >= sequenceNo) {
+    finalSeq = maxSeq + 1;
+    finalTransferNoStr = `${yymm}${finalSeq}`;
   }
 }
     // 明細データフォーマット
