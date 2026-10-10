@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 // ----------------------------------------------------
-// GET: 最新の「振込No通番」を取得する処理（CELFでの降順ソート適用版）
+// GET: 最新の「振込No通番」を取得する処理
 // ----------------------------------------------------
 export async function GET(request: Request) {
   try {
@@ -14,13 +14,9 @@ export async function GET(request: Request) {
     const targetDeptCode = searchParams.get('deptCode') || '';
     const targetYymm = searchParams.get('transferNoYymm') || '';
 
-    // CELFへのリクエストパラメータ
-    // limit: 直近の必要十分な件数
-    // sort: 最新データを上に持ってくるために降順指定（'-ID'）
     const limit = 2000;
     const sortColumn = '-ID';
 
-    // CELF API URLの構築
     const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}&limit=${limit}&sort=${encodeURIComponent(sortColumn)}`;
     const CELF_API_URL = encodeURI(rawUrl);
 
@@ -54,7 +50,6 @@ export async function GET(request: Request) {
       );
     }
 
-    // 返却データの抽出
     let records: any[] = [];
     if (Array.isArray(data[tableName])) {
       records = data[tableName];
@@ -71,7 +66,6 @@ export async function GET(request: Request) {
 
     console.log(`[CELF Fetch Success] CELFから取得した件数: ${records.length}件`);
 
-    // 条件による絞り込み（店舗名・部門コード・振込No年月）
     let filteredRecords = records;
 
     if (targetStoreName) {
@@ -105,7 +99,7 @@ export async function GET(request: Request) {
 }
 
 // ----------------------------------------------------
-// POST: CELFへの一括登録処理（安全な例外・レスポンスガード付き）
+// POST: CELFへの一括登録処理（データフォーマット不整合の防止）
 // ----------------------------------------------------
 export async function POST(request: Request) {
   try {
@@ -127,6 +121,7 @@ export async function POST(request: Request) {
       items,
       transferNoYymm,
       transferNoSeq,
+      totalAmount,
     } = body;
 
     const CELF_API_KEY = process.env.CELF_API_KEY || '';
@@ -172,15 +167,10 @@ export async function POST(request: Request) {
           'リスト入力者': String(staffName || ''),
         };
       } else {
-        const totalAmountVal = (index === 0 && item.totalTransferAmount !== undefined)
-          ? (typeof item.totalTransferAmount === 'number' ? item.totalTransferAmount : Number(item.totalTransferAmount || 0))
-          : '';
-
-        return {
+        // 後日キャッシュバック用データ整形
+        const recordObj: any = {
           '振込No年月': String(transferNoYymm || ''),
           '振込No通番': typeof transferNoSeq === 'number' ? transferNoSeq : Number(transferNoSeq || 0),
-          '振込合計金額': totalAmountVal,
-          
           '店舗名': String(storeName || ''),
           '代理店コード': String(agentCode || ''),
           '略称': String(posAbbr || ''),
@@ -198,12 +188,24 @@ export async function POST(request: Request) {
           'ダブルチェック': String(checkerName || ''),
           '備考欄': String(memo || ''),
         };
+
+        // 最初の1件目のみ「振込合計金額」を数値として追加設定（空のときは列自体を追加しない）
+        if (index === 0) {
+          const calcTotal = totalAmount ?? item.totalTransferAmount;
+          if (calcTotal !== undefined && calcTotal !== null && calcTotal !== '') {
+            recordObj['振込合計金額'] = Number(calcTotal) || 0;
+          }
+        }
+
+        return recordObj;
       }
     });
 
     const payload = {
       [tableName]: records,
     };
+
+    console.log('[CELF POST Payload]:', JSON.stringify(payload));
 
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
@@ -224,6 +226,7 @@ export async function POST(request: Request) {
     }
 
     if (!response.ok) {
+      console.error(`[CELF POST ERROR] Status: ${response.status}`, responseText);
       return NextResponse.json({
         success: false,
         httpStatus: response.status,
@@ -238,7 +241,6 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error('[CELF POST Internal Error]:', error);
-    // 例外発生時も必ずJSON形式でエラー結果を返却
     return NextResponse.json(
       {
         success: false,
