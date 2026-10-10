@@ -99,7 +99,7 @@ export async function GET(request: Request) {
 }
 
 // ----------------------------------------------------
-// POST: CELFへの一括登録処理（完全クリーン化オブジェクト構築）
+// POST: CELFへの一括登録処理（CELF型定義との完全一致化）
 // ----------------------------------------------------
 export async function POST(request: Request) {
   try {
@@ -141,6 +141,7 @@ export async function POST(request: Request) {
     }
 
     const records = (items || []).map((item: any, index: number) => {
+      // 数値化の厳格処理
       const amountNum = typeof item.amount === 'number' 
         ? item.amount 
         : Number(String(item.amount || '0').replace(/[^0-9.-]/g, '')) || 0;
@@ -157,8 +158,8 @@ export async function POST(request: Request) {
           '申込書番号': String(item.appNo || ''),
           '還元内容': String(item.type || ''),
           'セット割申番': String(item.subAppNo || ''),
-          '件数': 1,
-          '還元金額': amountNum,
+          '件数': 1, // 数値型
+          '還元金額': amountNum, // 数値型
           '出金者': String(staffName || ''),
           '出金ダブルチェック': String(checkerName || ''),
           '接客カウンター番号': String(counterNo || ''),
@@ -167,10 +168,12 @@ export async function POST(request: Request) {
           'リスト入力者': String(staffName || ''),
         };
       } else {
-        // 後日キャッシュバック用: 厳格に型が一致するプロパティのみを組み立て
+        // 後日キャッシュバック用: 数値項目（通番・件数・還元金額）を確実に Number 化
+        const seqNum = Number(transferNoSeq) || 0;
+
         const recordObj: Record<string, any> = {
           '振込No年月': String(transferNoYymm || ''),
-          '振込No通番': typeof transferNoSeq === 'number' ? transferNoSeq : Number(transferNoSeq || 0),
+          '振込No通番': seqNum, // 数値型
           '店舗名': String(storeName || ''),
           '代理店コード': String(agentCode || ''),
           '略称': String(posAbbr || ''),
@@ -181,19 +184,19 @@ export async function POST(request: Request) {
           '申込書番号': String(item.appNo || ''),
           '還元内容': String(item.type || ''),
           'セット割申番': String(item.subAppNo || ''),
-          '件数': 1,
-          '還元金額': amountNum,
+          '件数': 1, // 数値型
+          '還元金額': amountNum, // 数値型
           '送金方法': String(remittanceMethod || ''),
           '担当': String(staffName || ''),
           'ダブルチェック': String(checkerName || ''),
           '備考欄': String(memo || ''),
         };
 
-        // 最初の1件目のみ「振込合計金額」を数値として明示的に設定
+        // 1件目の明細のみ「振込合計金額」を数値型として追加
         if (index === 0) {
           const calcTotal = totalAmount ?? item.totalTransferAmount;
           if (calcTotal !== undefined && calcTotal !== null && calcTotal !== '') {
-            recordObj['振込合計金額'] = Number(calcTotal) || 0;
+            recordObj['振込合計金額'] = Number(calcTotal) || 0; // 数値型
           }
         }
 
