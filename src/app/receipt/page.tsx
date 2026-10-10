@@ -103,55 +103,54 @@ export default function ReceiptPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawing = useRef(false);
 
-// --- 後日キャッシュバックの振込No取得 (CELF GET) ---
-const fetchLatestTransferNo = async () => {
-  const now = new Date();
-  const yy = String(now.getFullYear()).slice(-2);
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const prefix = `${yy}${mm}-`; // "2609-"
-  setYymm(prefix);
+  // --- 後日キャッシュバックの振込No取得 (CELF GET) ---
+  const fetchLatestTransferNo = async () => {
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `${yy}${mm}-`; // "2609-"
+    setYymm(prefix);
 
-  try {
-    // storeName に加え deptCode もクエリに含める
-    const deptCode = storeInfo.deptCode || '';
-    const params = new URLSearchParams({
-      storeName: storeName,
-      deptCode: deptCode,
-      transferNoYymm: prefix,
-    });
-
-    const res = await fetch(`/api/celf?${params.toString()}`);
-    if (res.ok) {
-      const data = await res.json();
-      let maxSeq = 0;
-      const records = Array.isArray(data) ? data : (data.records || []);
-
-      records.forEach((item: any) => {
-        // 部門コード（deptCode）が一致するレコードに絞り込んで最大の通番を検索
-        const recordDept = item['部門コード'] || item.deptCode;
-        const matchesDept = !deptCode || recordDept === deptCode;
-
-        if (matchesDept && item['振込No通番'] !== undefined && item['振込No通番'] !== null) {
-          const seq = Number(item['振込No通番']);
-          if (!isNaN(seq) && seq > maxSeq) {
-            maxSeq = seq;
-          }
-        }
+    try {
+      const deptCode = storeInfo.deptCode || '';
+      const params = new URLSearchParams({
+        storeName: storeName,
+        deptCode: deptCode,
+        transferNoYymm: prefix,
       });
 
-      const nextSeq = maxSeq + 1;
-      setSequenceNo(nextSeq);
-      setDisplayTransferNo(`${prefix}${nextSeq}`);
-    } else {
+      const res = await fetch(`/api/celf?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        let maxSeq = 0;
+        const records = Array.isArray(data) ? data : (data.records || []);
+
+        records.forEach((item: any) => {
+          const recordDept = item['部門コード'] || item.deptCode;
+          const matchesDept = !deptCode || recordDept === deptCode;
+
+          if (matchesDept && item['振込No通番'] !== undefined && item['振込No通番'] !== null) {
+            const seq = Number(item['振込No通番']);
+            if (!isNaN(seq) && seq > maxSeq) {
+              maxSeq = seq;
+            }
+          }
+        });
+
+        const nextSeq = maxSeq + 1;
+        setSequenceNo(nextSeq);
+        setDisplayTransferNo(`${prefix}${nextSeq}`);
+      } else {
+        setSequenceNo(1);
+        setDisplayTransferNo(`${prefix}1`);
+      }
+    } catch (err) {
+      console.error('振込No取得エラー:', err);
       setSequenceNo(1);
       setDisplayTransferNo(`${prefix}1`);
     }
-  } catch (err) {
-    console.error('振込No取得エラー:', err);
-    setSequenceNo(1);
-    setDisplayTransferNo(`${prefix}1`);
-  }
-};
+  };
+
   // モードおよび還元方法変更時の連動制御
   useEffect(() => {
     setAgreed(false);
@@ -305,125 +304,133 @@ const fetchLatestTransferNo = async () => {
     setItems(newItems);
   };
 
-// --- 送信処理 ---
-const handleSubmit = async () => {
-  if (!staffName) return alert('担当者名を入力してください。');
-  if (mode === '即時' && !posBillNo) return alert('POS業務伝票番号を入力してください。');
-  if (items.some((item) => !item.isExisting && !item.appNo))
-    return alert('全ての還元内訳に申込書番号を入力（または既存を選択）してください。');
-  if (!signatureData) return alert('お客様署名（サイン）をお願いいたします。');
+  // --- 送信処理 ---
+  const handleSubmit = async () => {
+    if (!staffName) return alert('担当者名を入力してください。');
+    if (mode === '即時' && !posBillNo) return alert('POS業務伝票番号を入力してください。');
+    if (items.some((item) => !item.isExisting && !item.appNo))
+      return alert('全ての還元内訳に申込書番号を入力（または既存を選択）してください。');
+    if (!signatureData) return alert('お客様署名（サイン）をお願いいたします。');
 
-  setIsSending(true);
+    setIsSending(true);
 
-  try {
-    let finalSeq = sequenceNo;
-    let finalTransferNoStr = displayTransferNo;
+    try {
+      let finalSeq = sequenceNo;
+      let finalTransferNoStr = displayTransferNo;
 
-// 送信直前の最新通番二重チェック部分（handleSubmit内）
-if (mode === '後日') {
-  const deptCode = storeInfo.deptCode || '';
-  const params = new URLSearchParams({
-    storeName: storeName,
-    deptCode: deptCode,
-    transferNoYymm: yymm,
-  });
+      // 送信直前の最新通番二重チェック部分（handleSubmit内）
+      if (mode === '後日') {
+        const deptCode = storeInfo.deptCode || '';
+        const params = new URLSearchParams({
+          storeName: storeName,
+          deptCode: deptCode,
+          transferNoYymm: yymm,
+        });
 
-  const checkRes = await fetch(`/api/celf?${params.toString()}`);
-if (checkRes.ok) {
-  const text = await checkRes.text();
-  const checkData = text ? JSON.parse(text) : {};
-  let maxSeq = 0;
-  const records = Array.isArray(checkData) ? checkData : (checkData.records || []);
+        const checkRes = await fetch(`/api/celf?${params.toString()}`);
+        if (checkRes.ok) {
+          const text = await checkRes.text();
+          const checkData = text ? JSON.parse(text) : {};
+          let maxSeq = 0;
+          const records = Array.isArray(checkData) ? checkData : (checkData.records || []);
 
-  records.forEach((item: any) => {
-    const recordDept = item['部門コード'] || item.deptCode;
-    const matchesDept = !deptCode || recordDept === deptCode;
+          records.forEach((item: any) => {
+            const recordDept = item['部門コード'] || item.deptCode;
+            const matchesDept = !deptCode || recordDept === deptCode;
 
-    const rawSeq = item['振込No通番'] ?? item.transferNoSeq;
-    if (matchesDept && rawSeq !== undefined && rawSeq !== null) {
-      const seq = parseInt(String(rawSeq), 10);
-      if (!isNaN(seq) && seq > maxSeq) {
-        maxSeq = seq;
+            const rawSeq = item['振込No通番'] ?? item.transferNoSeq;
+            if (matchesDept && rawSeq !== undefined && rawSeq !== null) {
+              const seq = parseInt(String(rawSeq), 10);
+              if (!isNaN(seq) && seq > maxSeq) {
+                maxSeq = seq;
+              }
+            }
+          });
+
+          if (maxSeq >= sequenceNo) {
+            finalSeq = maxSeq + 1;
+            finalTransferNoStr = `${yymm}${finalSeq}`;
+          }
+        }
       }
-    }
-  });
 
-  if (maxSeq >= sequenceNo) {
-    finalSeq = maxSeq + 1;
-    finalTransferNoStr = `${yymm}${finalSeq}`;
-  }
-}
-    // 明細データフォーマット
-    const formattedItems = items.map((item, index) => {
-      const finalAppNo = item.isExisting ? item.existingPlan : item.appNo;
+      // 明細データフォーマット
+      const formattedItems = items.map((item, index) => {
+        const finalAppNo = item.isExisting ? item.existingPlan : item.appNo;
 
-      const baseItem: any = {
-        type: item.type === 'その他（手入力）' ? item.customType : item.type,
-        appNo: finalAppNo,
-        subAppNo: isSetDiscountSupported(item.type) ? item.subAppNo : '',
-        amount: Number(item.amount) || 0,
+        const baseItem: any = {
+          type: item.type === 'その他（手入力）' ? item.customType : item.type,
+          appNo: finalAppNo,
+          subAppNo: isSetDiscountSupported(item.type) ? item.subAppNo : '',
+          amount: Number(item.amount) || 0,
+        };
+
+        if (mode === '後日' && index === 0) {
+          baseItem.totalTransferAmount = totalAmount;
+        }
+
+        return baseItem;
+      });
+
+      const formattedPosDate = posDate ? posDate.replace(/-/g, '/') : '';
+
+      const payload: any = {
+        mode,
+        storeName,
+        agentCode: storeInfo.agentCode || '',
+        posAbbr: storeInfo.posAbbr || '',
+        deptCode: storeInfo.deptCode || '',
+        customerName,
+        posDate: formattedPosDate,
+        memo,
+        remittanceMethod: mode === '後日' ? remittanceMethod : '',
+        staffName,
+        checkerName,
+        counterNo: mode === '即時' ? counterNo : '',
+        posBillNo: mode === '即時' ? posBillNo : '',
+        totalAmount,
+        items: formattedItems,
       };
 
-      // 後日キャッシュバック時、最初の1件目のみ振込合計金額（totalTransferAmount）を付与
-      if (mode === '後日' && index === 0) {
-        baseItem.totalTransferAmount = totalAmount;
+      if (mode === '後日') {
+        payload.transferNoYymm = yymm;
+        payload.transferNoSeq = finalSeq;
+        payload.transferNo = finalTransferNoStr;
       }
 
-      return baseItem;
-    });
+      const res = await fetch('/api/celf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-    const formattedPosDate = posDate ? posDate.replace(/-/g, '/') : '';
+      const responseText = await res.text();
+      let data: any = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (e) {
+        throw new Error(`サーバーから不正なレスポンスが返されました (Status: ${res.status}):\n${responseText}`);
+      }
 
-    const payload: any = {
-      mode,
-      storeName,
-      agentCode: storeInfo.agentCode || '',
-      posAbbr: storeInfo.posAbbr || '',
-      deptCode: storeInfo.deptCode || '',
-      customerName,
-      posDate: formattedPosDate,
-      memo,
-      remittanceMethod: mode === '後日' ? remittanceMethod : '',
-      staffName,
-      checkerName,
-      counterNo: mode === '即時' ? counterNo : '',
-      posBillNo: mode === '即時' ? posBillNo : '',
-      totalAmount,
-      items: formattedItems,
-    };
+      if (!res.ok || !data.success) {
+        const payloadStr = data.sentPayloadString || 'なし';
+        const errDetail = data.celfResponse ? JSON.stringify(data.celfResponse) : (data.error || responseText);
+        throw new Error(`CELF応答: ${errDetail}\n\n送信データ:\n${payloadStr}`);
+      }
 
-    if (mode === '後日') {
-      // ハイフン前後の値（yymm: "2609-", transferNoSeq: 1）を明確に分解・保持して送る
-      payload.transferNoYymm = yymm; // 例: "2609-"
-      payload.transferNoSeq = finalSeq; // 例: 1 (数値型)
-      payload.transferNo = finalTransferNoStr; // 例: "2609-1"
+      const logMsg =
+        mode === '即時'
+          ? '受領書を保存しました。（振込No: 即時処理）'
+          : `受領書を保存しました。（振込No: ${finalTransferNoStr}で登録しました）`;
+      alert(logMsg);
+      window.print();
+    } catch (err: any) {
+      alert(`エラー詳細:\n${err.message}`);
+    } finally {
+      setIsSending(false);
     }
+  };
 
-    const res = await fetch('/api/celf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await res.json();
-    if (!data.success) {
-      const payloadStr = data.sentPayloadString || 'なし';
-      const errDetail = data.celfResponse ? JSON.stringify(data.celfResponse) : data.error;
-      throw new Error(`CELF応答: ${errDetail}\n\n送信データ:\n${payloadStr}`);
-    }
-
-    const logMsg =
-      mode === '即時'
-        ? '受領書を保存しました。（振込No: 即時処理）'
-        : `受領書を保存しました。（振込No: ${finalTransferNoStr}で登録しました）`;
-    alert(logMsg);
-    window.print();
-  } catch (err: any) {
-    alert(`エラー詳細:\n${err.message}`);
-  } finally {
-    setIsSending(false);
-  }
-};
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8 font-sans">
       <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-md p-6 print:shadow-none print:p-0">
@@ -494,7 +501,6 @@ if (checkRes.ok) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             
-            {/* 即時キャッシュバック時は店舗名欄を非表示（最上部に表示されているため） */}
             {mode === '後日' && (
               <div>
                 <label className="block text-xs font-semibold text-green-700 mb-1">還元方法 *</label>
@@ -823,68 +829,4 @@ if (checkRes.ok) {
         {/* 4. 最終確認同意 & 電子サイン */}
         <div className="mb-6">
           <label
-            className={`flex items-start gap-2 mb-3 p-2.5 rounded-lg border transition-all ${
-              !isAllTermsChecked
-                ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed'
-                : 'bg-amber-50 border-amber-300 cursor-pointer print:hidden'
-            }`}
-          >
-            <input
-              type="checkbox"
-              disabled={!isAllTermsChecked}
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              className="mt-0.5 h-4 w-4"
-            />
-            <span className="text-xs font-bold text-slate-800">
-              {mode === '即時'
-                ? '上記内容に相違ないことを確認し、現金を受領しました。'
-                : '上記内容についてスタッフから説明を受け、同意しました'}
-            </span>
-          </label>
-
-          <div className="border border-slate-300 rounded-lg p-2 bg-slate-50 relative print:bg-white">
-            <div className="flex justify-between text-xs text-slate-500 mb-1 print:hidden">
-              <span>お客様署名欄 (枠内に手書き)</span>
-              <button type="button" onClick={clearCanvas} className="text-slate-500 underline">
-                クリア
-              </button>
-            </div>
-            <canvas
-              ref={canvasRef}
-              width={500}
-              height={120}
-              className="w-full bg-white border border-dashed border-slate-300 rounded touch-none cursor-crosshair"
-              onMouseDown={startDrawing}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
-              onMouseMove={draw}
-              onTouchStart={startDrawing}
-              onTouchEnd={stopDrawing}
-              onTouchMove={draw}
-            />
-          </div>
-        </div>
-
-        {/* 5. アクションボタン */}
-        <div className="print:hidden">
-          <button
-            type="button"
-            disabled={!agreed || isSending}
-            onClick={handleSubmit}
-            className={`w-full py-3.5 rounded-lg text-white font-bold transition-all shadow-md ${
-              agreed && !isSending
-                ? mode === '即時'
-                  ? 'bg-orange-500 hover:bg-orange-600'
-                  : 'bg-blue-600 hover:bg-blue-700'
-                : 'bg-slate-300 cursor-not-allowed'
-            }`}
-          >
-            {isSending ? 'CELF連携中...' : '受領書を発行・印刷する'}
-          </button>
-        </div>
-
-      </div>
-    </div>
-  );
-}
+            className={`flex
