@@ -99,7 +99,7 @@ export async function GET(request: Request) {
 }
 
 // ----------------------------------------------------
-// POST: CELFへの一括登録処理（データフォーマット不整合の防止）
+// POST: CELFへの一括登録処理（完全クリーン化オブジェクト構築）
 // ----------------------------------------------------
 export async function POST(request: Request) {
   try {
@@ -167,8 +167,8 @@ export async function POST(request: Request) {
           'リスト入力者': String(staffName || ''),
         };
       } else {
-        // 後日キャッシュバック用データ整形
-        const recordObj: any = {
+        // 後日キャッシュバック用: 厳格に型が一致するプロパティのみを組み立て
+        const recordObj: Record<string, any> = {
           '振込No年月': String(transferNoYymm || ''),
           '振込No通番': typeof transferNoSeq === 'number' ? transferNoSeq : Number(transferNoSeq || 0),
           '店舗名': String(storeName || ''),
@@ -189,7 +189,7 @@ export async function POST(request: Request) {
           '備考欄': String(memo || ''),
         };
 
-        // 最初の1件目のみ「振込合計金額」を数値として追加設定（空のときは列自体を追加しない）
+        // 最初の1件目のみ「振込合計金額」を数値として明示的に設定
         if (index === 0) {
           const calcTotal = totalAmount ?? item.totalTransferAmount;
           if (calcTotal !== undefined && calcTotal !== null && calcTotal !== '') {
@@ -205,7 +205,7 @@ export async function POST(request: Request) {
       [tableName]: records,
     };
 
-    console.log('[CELF POST Payload]:', JSON.stringify(payload));
+    console.log('[CELF POST Clean Payload]:', JSON.stringify(payload));
 
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
