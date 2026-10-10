@@ -84,7 +84,7 @@ export async function GET(request: Request) {
 }
 
 // ----------------------------------------------------
-// POST: CELFへの一括登録処理 (/bulkinsert エンドポイント適用)
+// POST: CELFへの一括登録処理 (/bulkinsert & 完全キー適合版)
 // ----------------------------------------------------
 export async function POST(request: Request) {
   try {
@@ -106,7 +106,6 @@ export async function POST(request: Request) {
       items,
       transferNoYymm,
       transferNoSeq,
-      totalAmount,
     } = body;
 
     const CELF_API_KEY = process.env.CELF_API_KEY || '016e7269-7d7c-4654-a08d-a2aff307176d';
@@ -115,7 +114,7 @@ export async function POST(request: Request) {
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
     const encodedTableName = encodeURIComponent(tableName);
     
-    // 【重要】一括登録API用の正しいエンドポイント (/bulkinsert)
+    // 一括登録API用エンドポイント
     const CELF_API_URL = `https://api.cloud.celf.jp/v1/tables/${encodedTableName}/bulkinsert?company=${companyId}`;
 
     const today = new Date();
@@ -126,7 +125,7 @@ export async function POST(request: Request) {
       formattedPosDate = String(posDate).replace(/-/g, '/');
     }
 
-    const records = (items || []).map((item: any, index: number) => {
+    const records = (items || []).map((item: any) => {
       const amountNum = Number(String(item.amount || '0').replace(/[^0-9.-]/g, '')) || 0;
 
       if (mode === '即時') {
@@ -152,12 +151,11 @@ export async function POST(request: Request) {
         };
       } else {
         const seqNum = Number(transferNoSeq) || 0;
-        const totalNum = Number(totalAmount ?? item.totalTransferAmount) || 0;
 
+        // CELFのテーブル項目に厳格に合わせたオブジェクト
         return {
           '振込No年月': String(transferNoYymm || ''),
           '振込No通番': seqNum,
-          '振込合計金額': index === 0 ? totalNum : 0,
           '店舗名': String(storeName || ''),
           '代理店コード': String(agentCode || ''),
           '略称': String(posAbbr || ''),
@@ -178,7 +176,6 @@ export async function POST(request: Request) {
       }
     });
 
-    // CELF一括登録用標準構造
     const payload = {
       [tableName]: records,
     };
