@@ -318,7 +318,6 @@ export default function ReceiptPage() {
       let finalSeq = sequenceNo;
       let finalTransferNoStr = displayTransferNo;
 
-      // 送信直前の最新通番二重チェック部分（handleSubmit内）
       if (mode === '後日') {
         const deptCode = storeInfo.deptCode || '';
         const params = new URLSearchParams({
@@ -354,7 +353,6 @@ export default function ReceiptPage() {
         }
       }
 
-      // 明細データフォーマット
       const formattedItems = items.map((item, index) => {
         const finalAppNo = item.isExisting ? item.existingPlan : item.appNo;
 
@@ -829,4 +827,68 @@ export default function ReceiptPage() {
         {/* 4. 最終確認同意 & 電子サイン */}
         <div className="mb-6">
           <label
-            className={`flex
+            className={`flex items-start gap-2 mb-3 p-2.5 rounded-lg border transition-all ${
+              !isAllTermsChecked
+                ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed'
+                : 'bg-amber-50 border-amber-300 cursor-pointer print:hidden'
+            }`}
+          >
+            <input
+              type="checkbox"
+              disabled={!isAllTermsChecked}
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-0.5 h-4 w-4"
+            />
+            <span className="text-xs font-bold text-slate-800">
+              {mode === '即時'
+                ? '上記内容に相違ないことを確認し、現金を受領しました。'
+                : '上記内容についてスタッフから説明を受け、同意しました'}
+            </span>
+          </label>
+
+          <div className="border border-slate-300 rounded-lg p-2 bg-slate-50 relative print:bg-white">
+            <div className="flex justify-between text-xs text-slate-500 mb-1 print:hidden">
+              <span>お客様署名欄 (枠内に手書き)</span>
+              <button type="button" onClick={clearCanvas} className="text-slate-500 underline">
+                クリア
+              </button>
+            </div>
+            <canvas
+              ref={canvasRef}
+              width={500}
+              height={120}
+              className="w-full bg-white border border-dashed border-slate-300 rounded touch-none cursor-crosshair"
+              onMouseDown={startDrawing}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onMouseMove={draw}
+              onTouchStart={startDrawing}
+              onTouchEnd={stopDrawing}
+              onTouchMove={draw}
+            />
+          </div>
+        </div>
+
+        {/* 5. アクションボタン */}
+        <div className="print:hidden">
+          <button
+            type="button"
+            disabled={!agreed || isSending}
+            onClick={handleSubmit}
+            className={`w-full py-3.5 rounded-lg text-white font-bold transition-all shadow-md ${
+              agreed && !isSending
+                ? mode === '即時'
+                  ? 'bg-orange-500 hover:bg-orange-600'
+                  : 'bg-blue-600 hover:bg-blue-700'
+                : 'bg-slate-300 cursor-not-allowed'
+            }`}
+          >
+            {isSending ? 'CELF連携中...' : '受領書を発行・印刷する'}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
