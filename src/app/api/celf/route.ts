@@ -99,7 +99,7 @@ export async function GET(request: Request) {
 }
 
 // ----------------------------------------------------
-// POST: CELFへの一括登録処理（CELF型定義との完全一致化）
+// POST: CELFへの一括登録処理（完全型変換＆フォーマット正規化）
 // ----------------------------------------------------
 export async function POST(request: Request) {
   try {
@@ -133,15 +133,17 @@ export async function POST(request: Request) {
     const CELF_API_URL = encodeURI(rawUrl);
 
     const today = new Date();
-    const receptionMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    // 受付月（YYYY/MM/01 フォーマット）
+    const receptionMonth = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, '0')}/01`;
 
+    // POS登録日（スラッシュ区切りの標準日付表記に変換）
     let formattedPosDate = receptionMonth;
     if (posDate) {
-      formattedPosDate = String(posDate).replace(/\//g, '-');
+      formattedPosDate = String(posDate).replace(/-/g, '/');
     }
 
     const records = (items || []).map((item: any, index: number) => {
-      // 数値化の厳格処理
+      // 金額数値の厳格変換
       const amountNum = typeof item.amount === 'number' 
         ? item.amount 
         : Number(String(item.amount || '0').replace(/[^0-9.-]/g, '')) || 0;
@@ -158,8 +160,8 @@ export async function POST(request: Request) {
           '申込書番号': String(item.appNo || ''),
           '還元内容': String(item.type || ''),
           'セット割申番': String(item.subAppNo || ''),
-          '件数': 1, // 数値型
-          '還元金額': amountNum, // 数値型
+          '件数': 1,
+          '還元金額': amountNum,
           '出金者': String(staffName || ''),
           '出金ダブルチェック': String(checkerName || ''),
           '接客カウンター番号': String(counterNo || ''),
@@ -168,12 +170,14 @@ export async function POST(request: Request) {
           'リスト入力者': String(staffName || ''),
         };
       } else {
-        // 後日キャッシュバック用: 数値項目（通番・件数・還元金額）を確実に Number 化
         const seqNum = Number(transferNoSeq) || 0;
+        const calcTotal = Number(totalAmount ?? item.totalTransferAmount) || 0;
 
+        // すべてのキーを同一の順序・型構造で固定出力
         const recordObj: Record<string, any> = {
           '振込No年月': String(transferNoYymm || ''),
-          '振込No通番': seqNum, // 数値型
+          '振込No通番': seqNum,
+          '振込合計金額': index === 0 ? calcTotal : 0, // 2件目以降は 0 に固定
           '店舗名': String(storeName || ''),
           '代理店コード': String(agentCode || ''),
           '略称': String(posAbbr || ''),
@@ -184,21 +188,13 @@ export async function POST(request: Request) {
           '申込書番号': String(item.appNo || ''),
           '還元内容': String(item.type || ''),
           'セット割申番': String(item.subAppNo || ''),
-          '件数': 1, // 数値型
-          '還元金額': amountNum, // 数値型
+          '件数': 1,
+          '還元金額': amountNum,
           '送金方法': String(remittanceMethod || ''),
           '担当': String(staffName || ''),
           'ダブルチェック': String(checkerName || ''),
           '備考欄': String(memo || ''),
         };
-
-        // 1件目の明細のみ「振込合計金額」を数値型として追加
-        if (index === 0) {
-          const calcTotal = totalAmount ?? item.totalTransferAmount;
-          if (calcTotal !== undefined && calcTotal !== null && calcTotal !== '') {
-            recordObj['振込合計金額'] = Number(calcTotal) || 0; // 数値型
-          }
-        }
 
         return recordObj;
       }
@@ -208,7 +204,7 @@ export async function POST(request: Request) {
       [tableName]: records,
     };
 
-    console.log('[CELF POST Clean Payload]:', JSON.stringify(payload));
+    console.log('[CELF POST Strictly Formatted Payload]:', JSON.stringify(payload));
 
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
