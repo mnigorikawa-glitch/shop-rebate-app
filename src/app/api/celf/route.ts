@@ -4,26 +4,23 @@ export async function GET(request: Request) {
   return NextResponse.json([]);
 }
 
-// ----------------------------------------------------
-// POST: 原因特定のための最小構成テスト送信
-// ----------------------------------------------------
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { mode, storeName, items } = body;
 
-    const CELF_API_KEY = process.env.CELF_API_KEY || '';
+    const CELF_API_KEY = process.env.CELF_API_KEY || '016e7269-7d7c-4654-a08d-a2aff307176d';
     const companyId = '340076c518';
 
     const tableName = mode === '即時' ? '即時cbデータtest' : '後日cbデータtest';
 
-    const rawUrl = `https://api.cloud.celf.jp/v1/tables/${tableName}?company=${companyId}`;
-    const CELF_API_URL = encodeURI(rawUrl);
+    // テーブル名をエンコード
+    const encodedTableName = encodeURIComponent(tableName);
+    const CELF_API_URL = `https://api.cloud.celf.jp/v1/tables/${encodedTableName}?company=${companyId}`;
 
-    // 【最小構成】必要最小限の基本項目（店舗名・還元金額）のみに絞り込み
     const records = (items || []).map((item: any) => {
       return {
-        '店舗名': String(storeName || 'テスト店舗'),
+        '店舗名': String(storeName || ''),
         '還元金額': Number(item.amount) || 0,
       };
     });
@@ -32,12 +29,13 @@ export async function POST(request: Request) {
       [tableName]: records,
     };
 
-    console.log('[DEBUG] CELF POST Minimal Payload:', JSON.stringify(payload));
+    console.log('[DEBUG URL]:', CELF_API_URL);
+    console.log('[DEBUG PAYLOAD]:', JSON.stringify(payload));
 
     const response = await fetch(CELF_API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json; charset=utf-8',
         'X-CELF-API-KEY': CELF_API_KEY,
       },
       body: JSON.stringify(payload),
@@ -53,7 +51,7 @@ export async function POST(request: Request) {
     }
 
     if (!response.ok) {
-      console.error(`[CELF POST DEBUG ERROR] Status: ${response.status}`, responseText);
+      console.error(`[CELF POST ERROR] Status: ${response.status}`, responseText);
       return NextResponse.json({
         success: false,
         httpStatus: response.status,
@@ -67,12 +65,8 @@ export async function POST(request: Request) {
       data: responseData,
     });
   } catch (error: any) {
-    console.error('[CELF POST Debug Error]:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || '内部エラーが発生しました',
-      },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }
